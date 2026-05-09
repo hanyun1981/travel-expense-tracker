@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>旅遊記帳</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --border: #e3e5ea;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --danger: #dc2626;
+    --success: #059669;
+    --warning: #d97706;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  /* ===== Loading ===== */
+  #loading-screen {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px;
+    background: var(--bg);
+    z-index: 100;
+  }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ===== Login ===== */
+  #login-screen {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg);
+    z-index: 90;
+    padding: 20px;
+  }
+  .login-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    box-shadow: var(--shadow);
+    max-width: 360px;
+    width: 100%;
+    text-align: center;
+  }
+  .login-card h1 { margin: 0 0 8px 0; font-size: 22px; }
+  .login-card p { color: var(--muted); margin: 0 0 24px 0; font-size: 14px; }
+  #google-signin-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 10px;
+    padding: 10px 20px;
+    background: white;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-family: inherit;
+    width: 100%;
+  }
+  #google-signin-btn:hover { background: var(--bg); }
+  #login-error { color: var(--danger); font-size: 13px; margin-top: 12px; min-height: 18px; }
+
+  /* ===== Header ===== */
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+  .user-info {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .connection-pill {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    background: var(--bg);
+    color: var(--muted);
+  }
+  .connection-pill.ok { background: #d1fae5; color: #065f46; }
+  .connection-pill.off { background: #fef3c7; color: #92400e; }
+  nav {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  nav button {
+    padding: 8px 14px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  nav button:hover {
+    background: var(--bg);
+    color: var(--text);
+  }
+  nav button.active {
+    background: var(--primary);
+    color: white;
+  }
+
+  /* ===== Main ===== */
+  main {
+    max-width: 900px;
+    margin: 20px auto;
+    padding: 0 16px 60px;
+  }
+  section.tab { display: none; }
+  section.tab.active { display: block; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
+  }
+  .panel h2 {
+    margin: 0 0 14px 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .row + .row { margin-top: 10px; }
+  label {
+    font-size: 13px;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 4px;
+  }
+  input[type="text"], input[type="number"], input[type="date"], input[type="email"], select, textarea {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+    background: white;
+    color: var(--text);
+    width: 100%;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+  }
+  .field { flex: 1; min-width: 120px; }
+  button.btn {
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    background: white;
+    color: var(--text);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  button.btn:hover { background: var(--bg); }
+  button.btn.primary {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+  button.btn.primary:hover {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+  }
+  button.btn.danger {
+    color: var(--danger);
+    border-color: #f3c0c0;
+  }
+  button.btn.danger:hover { background: #fef2f2; }
+  button.btn.ghost {
+    border-color: transparent;
+    background: transparent;
+  }
+  button.btn.ghost:hover { background: var(--bg); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--bg);
+    border-radius: 12px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .empty {
+    color: var(--muted);
+    text-align: center;
+    padding: 24px 12px;
+    font-size: 14px;
+  }
+  .split-row {
+    display: grid;
+    grid-template-columns: 1fr 140px 36px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .split-row .name { padding: 8px 0; }
+  .balance-pos { color: var(--success); font-weight: 600; }
+  .balance-neg { color: var(--danger); font-weight: 600; }
+  .balance-zero { color: var(--muted); }
+  .total-check {
+    font-size: 13px;
+    margin-top: 6px;
+    color: var(--muted);
+  }
+  .total-check.ok { color: var(--success); }
+  .total-check.bad { color: var(--warning); }
+  .actions { display: flex; gap: 6px; }
+  .header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .header-row h2 { margin: 0; }
+  .badge-base {
+    background: var(--primary);
+    color: white;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    margin-left: 6px;
+  }
+  .transaction {
+    padding: 12px 14px;
+    background: var(--bg);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .transaction .amt { font-weight: 600; color: var(--primary); font-variant-numeric: tabular-nums; }
+  @media (max-width: 600px) {
+    .split-row { grid-template-columns: 1fr 110px 32px; }
+    th, td { padding: 8px 4px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loading-screen">
+  <div class="spinner"></div>
+  <div style="color: var(--muted)" id="loading-text">連線中…</div>
+  <button id="show-diagnostic-btn" style="margin-top:16px; padding:6px 12px; border:1px solid #e3e5ea; background:white; border-radius:6px; cursor:pointer; font-size:13px; color:#6b7280; font-family:inherit">看不到登入畫面？點此查看詳情</button>
+</div>
+
+<script>
+  // ===== 診斷腳本：捕捉錯誤、避免無限轉圈 =====
+  window.__appLoaded = false;
+  window.__showAppError = function(title, detail) {
+    var l = document.getElementById('loading-screen');
+    if (!l) return;
+    l.innerHTML = '<div style="max-width:520px; padding:24px; text-align:left; background:white; border:1px solid #e3e5ea; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.08)">' +
+      '<h2 style="margin:0 0 12px 0; color:#dc2626; font-size:18px">' + title + '</h2>' +
+      '<pre style="background:#fef2f2; padding:12px; border-radius:6px; font-size:12px; white-space:pre-wrap; color:#7f1d1d; margin:0; line-height:1.5; max-height:300px; overflow:auto">' + detail + '</pre>' +
+      '<p style="color:#6b7280; font-size:13px; margin-top:14px">按 F12 → Console 可看更完整的錯誤訊息</p>' +
+      '</div>';
+  };
+  window.addEventListener('error', function(e) {
+    var msg = (e.message || (e.error && e.error.message) || '未知錯誤');
+    if (e.filename) msg += '\n\n來源：' + e.filename + (e.lineno ? ':' + e.lineno : '');
+    window.__showAppError('JavaScript 錯誤', msg);
+  });
+  window.addEventListener('unhandledrejection', function(e) {
+    var r = e.reason || {};
+    var msg = (r.message || String(r));
+    if (r.code) msg = '[' + r.code + ']\n' + msg;
+    window.__showAppError('未處理的錯誤', msg);
+  });
+  function __showDiagnostic() {
+    window.__showAppError('診斷資訊',
+      '若一直停在「連線中…」，可能原因：\n\n' +
+      '1. 瀏覽器擴充功能擋住 firebase SDK（試無痕視窗 ⌘+Shift+N）\n' +
+      '2. 網路無法連到 www.gstatic.com（防火牆 / VPN）\n' +
+      '3. Firebase Authentication 尚未啟用 Google 登入\n' +
+      '4. Realtime Database 尚未建立，或建立區域與 databaseURL 不符\n' +
+      '   目前設定區域：asia-southeast1（新加坡）\n\n' +
+      '解法：按 F12 → Console，把紅色錯誤訊息貼給對話視窗。');
+  }
+  document.getElementById('show-diagnostic-btn').addEventListener('click', __showDiagnostic);
+  setTimeout(function() {
+    if (window.__appLoaded) return;
+    var t = document.getElementById('loading-text');
+    if (t) t.textContent = '連線中…（已等待 2 秒，若超過 5 秒沒反應請點下方按鈕）';
+  }, 2000);
+  setTimeout(function() {
+    if (window.__appLoaded) return;
+    var l = document.getElementById('loading-screen');
+    if (l && !l.hidden) __showDiagnostic();
+  }, 5000);
+</script>
+
+<div id="login-screen" hidden>
+  <div class="login-card">
+    <h1>旅遊記帳</h1>
+    <p>輸入同步密碼。多裝置使用相同密碼即可看到同一份資料。</p>
+    <form id="passphrase-form" style="display:flex; flex-direction:column; gap:10px">
+      <input type="password" id="passphrase-input" placeholder="輸入密碼（至少 6 字元）" required minlength="6" autocomplete="off" autofocus style="text-align:center">
+      <button type="submit" class="btn primary" style="padding:10px">進入</button>
+    </form>
+    <p style="margin-top:16px; font-size:12px; color:var(--muted); text-align:left">⚠️ 沒有「忘記密碼」功能，請務必記住。任何知道密碼的人都能存取你的資料，建議用 8 字元以上、含英數字的密碼。</p>
+    <div id="login-error" style="color:var(--danger); font-size:13px; margin-top:8px; min-height:18px"></div>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <div class="header-top">
+      <h1>旅遊記帳</h1>
+      <div class="user-info">
+        <span class="connection-pill" id="connection-status">同步中</span>
+        <span id="user-email"></span>
+        <button class="btn ghost" id="signout-btn">切換密碼</button>
+      </div>
+    </div>
+    <nav id="nav">
+      <button data-tab="expenses" class="active">消費紀錄</button>
+      <button data-tab="settlement">結算</button>
+      <button data-tab="people">人員</button>
+      <button data-tab="currencies">幣別與匯率</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-expenses" class="tab active">
+      <div class="panel">
+        <div class="header-row">
+          <h2 id="expense-form-title">新增消費</h2>
+          <button class="btn ghost" id="reset-expense-btn" style="display:none">取消編輯</button>
+        </div>
+        <form id="expense-form">
+          <div class="row">
+            <div class="field" style="flex:2">
+              <label>描述</label>
+              <input type="text" id="exp-desc" placeholder="例：晚餐、計程車" required>
+            </div>
+            <div class="field">
+              <label>日期</label>
+              <input type="date" id="exp-date" required>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>幣別</label>
+              <select id="exp-currency" required></select>
+            </div>
+            <div class="field">
+              <label>金額</label>
+              <input type="number" id="exp-amount" step="0.01" min="0" placeholder="0.00" required>
+            </div>
+            <div class="field">
+              <label>付款人</label>
+              <select id="exp-payer" required></select>
+            </div>
+          </div>
+          <div style="margin-top: 14px">
+            <label>分攤明細</label>
+            <div id="splits-container"></div>
+            <div class="row" style="margin-top: 8px">
+              <select id="add-split-person" style="flex:1"></select>
+              <button type="button" class="btn" id="add-split-btn">加入分攤人</button>
+              <button type="button" class="btn" id="split-evenly-btn">平均分攤</button>
+            </div>
+            <div class="total-check" id="split-total-check"></div>
+          </div>
+          <div class="row" style="margin-top: 16px; justify-content: flex-end">
+            <button type="submit" class="btn primary" id="save-expense-btn">儲存消費</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="header-row">
+          <h2>消費紀錄</h2>
+          <span class="pill" id="expense-count">0 筆</span>
+        </div>
+        <div id="expense-list"></div>
+      </div>
+    </section>
+
+    <section id="tab-settlement" class="tab">
+      <div class="panel">
+        <h2>每人淨額（換算為基準幣）</h2>
+        <div id="balance-list"></div>
+      </div>
+      <div class="panel">
+        <h2>建議轉帳</h2>
+        <div id="transaction-list"></div>
+      </div>
+    </section>
+
+    <section id="tab-people" class="tab">
+      <div class="panel">
+        <h2>人員</h2>
+        <form id="person-form" class="row" style="margin-bottom: 16px">
+          <input type="text" id="person-name" placeholder="姓名" required style="flex:1">
+          <button type="submit" class="btn primary">新增</button>
+        </form>
+        <div id="person-list"></div>
+      </div>
+    </section>
+
+    <section id="tab-currencies" class="tab">
+      <div class="panel">
+        <h2>基準幣</h2>
+        <div class="row">
+          <div class="field">
+            <label>基準幣（其他幣別匯率以此為基礎）</label>
+            <select id="base-currency-select"></select>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>幣別與匯率</h2>
+        <p style="color: var(--muted); font-size: 13px; margin-top: 0">匯率定義：1 單位該幣別 = X 單位基準幣。基準幣的匯率永遠為 1。</p>
+        <form id="currency-form" class="row" style="margin-bottom: 16px">
+          <input type="text" id="currency-code" placeholder="代碼（如 USD）" required style="width:140px; text-transform:uppercase">
+          <input type="text" id="currency-name" placeholder="名稱（如 美元）" required style="flex:1">
+          <input type="number" id="currency-rate" step="0.0001" min="0" placeholder="匯率" required style="width:140px">
+          <button type="submit" class="btn primary">新增/更新</button>
+        </form>
+        <div id="currency-list"></div>
+      </div>
+      <div class="panel">
+        <h2>資料管理</h2>
+        <div class="row">
+          <button class="btn" id="export-btn">匯出 JSON</button>
+          <button class="btn" id="import-btn">匯入 JSON</button>
+          <input type="file" id="import-file" accept="application/json" style="display:none">
+          <button class="btn danger" id="reset-btn">清除全部資料</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {
+  getDatabase, ref, onValue, set, update, remove, get
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+
+// ============================================================
+// Firebase 設定
+// ============================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyBK2FhH_A49a5W7-fvUJoeje7Euc7desLA",
+  authDomain: "travel-expense-tracker-bf01b.firebaseapp.com",
+  databaseURL: "https://travel-expense-tracker-bf01b-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "travel-expense-tracker-bf01b",
+  storageBucket: "travel-expense-tracker-bf01b.firebasestorage.app",
+  messagingSenderId: "725288274454",
+  appId: "1:725288274454:web:a1f926b22763c8b2b90337",
+  measurementId: "G-DS8HE1LY9S"
+};
+
+let fbApp, db;
+try {
+  fbApp = initializeApp(firebaseConfig);
+  db = getDatabase(fbApp);
+  window.__appLoaded = true;
+} catch (err) {
+  window.__showAppError('Firebase 初始化失敗', (err && err.message) || String(err));
+  throw err;
+}
+
+// ============================================================
+// 全域狀態
+// ============================================================
+let currentKey = null;
+let state = {
+  baseCurrency: 'TWD',
+  currencies: {},  // { code: { name, rate, createdAt } }
+  people: {},      // { id: { name, createdAt } }
+  expenses: {},    // { id: { desc, date, currency, amount, payer, splits: {personId:amount}, createdAt } }
+};
+let editingExpenseId = null;
+let currentSplits = []; // [{personId, amount}] — 暫存編輯中的分攤
+let dbUnsubs = [];      // 解除 onValue 監聽用
+let initialized = false;
+
+// ============================================================
+// 工具函式
+// ============================================================
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+function todayStr() {
+  const d = new Date();
+  const tz = d.getTimezoneOffset() * 60000;
+  return new Date(d - tz).toISOString().slice(0, 10);
+}
+function fmtMoney(n, currency) {
+  const v = Math.round(n * 100) / 100;
+  const s = v.toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return currency ? `${s} ${currency}` : s;
+}
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function peopleArray() {
+  return Object.entries(state.people || {})
+    .map(([id, p]) => ({ id, ...p }))
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+}
+function currenciesArray() {
+  return Object.entries(state.currencies || {})
+    .map(([code, c]) => ({ code, ...c }))
+    .sort((a, b) => {
+      if (a.code === state.baseCurrency) return -1;
+      if (b.code === state.baseCurrency) return 1;
+      return (a.createdAt || 0) - (b.createdAt || 0);
+    });
+}
+function expensesArray() {
+  return Object.entries(state.expenses || {}).map(([id, e]) => ({ id, ...e }));
+}
+function getPerson(id) { return state.people[id]; }
+function getCurrency(code) { return state.currencies[code]; }
+
+// ============================================================
+// 認證
+// ============================================================
+const loadingScreen = document.getElementById('loading-screen');
+const loginScreen = document.getElementById('login-screen');
+const appEl = document.getElementById('app');
+
+function showLoading() { loadingScreen.hidden = false; loginScreen.hidden = true; appEl.hidden = true; }
+function showLogin() { loadingScreen.hidden = true; loginScreen.hidden = false; appEl.hidden = true; }
+function showApp() { loadingScreen.hidden = true; loginScreen.hidden = true; appEl.hidden = false; }
+
+const PASSKEY_STORAGE = 'travel-expense-passkey-v1';
+
+async function sha256Hex(s) {
+  const buf = new TextEncoder().encode('travel-expense:' + s);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function startWithKey(key) {
+  try {
+    currentKey = key;
+    localStorage.setItem(PASSKEY_STORAGE, key);
+    document.getElementById('user-email').textContent = '識別碼：…' + key.slice(-6);
+    showLoading();
+    await initialiseUserData();
+    attachDbListeners();
+  } catch (err) {
+    window.__showAppError('啟動失敗', (err && err.message) || String(err));
+  }
+}
+
+function logout() {
+  detachDbListeners();
+  localStorage.removeItem(PASSKEY_STORAGE);
+  currentKey = null;
+  state = { baseCurrency: 'TWD', currencies: {}, people: {}, expenses: {} };
+  initialized = false;
+  showLogin();
+  const inp = document.getElementById('passphrase-input');
+  if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 50); }
+}
+
+document.getElementById('passphrase-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const inp = document.getElementById('passphrase-input');
+  const passphrase = inp.value;
+  const errEl = document.getElementById('login-error');
+  if (passphrase.length < 6) {
+    errEl.textContent = '密碼至少 6 字元';
+    return;
+  }
+  errEl.textContent = '';
+  const key = await sha256Hex(passphrase);
+  await startWithKey(key);
+});
+
+document.getElementById('signout-btn').addEventListener('click', () => {
+  if (!confirm('切換密碼？\n（雲端資料不會被刪除，下次輸入相同密碼即可看到）')) return;
+  logout();
+});
+
+// 自動恢復上次的密碼
+(function autoResume() {
+  const stored = localStorage.getItem(PASSKEY_STORAGE);
+  if (stored && /^[a-f0-9]{64}$/.test(stored)) {
+    startWithKey(stored);
+  } else {
+    showLogin();
+  }
+})();
+
+// ============================================================
+// 與 Realtime Database 同步
+// ============================================================
+function userPath(sub = '') {
+  return `travelTracker/${currentKey}${sub ? '/' + sub : ''}`;
+}
+
+async function initialiseUserData() {
+  // 第一次登入時，若資料完全空白，預先建立 TWD 基準幣
+  try {
+    const snap = await get(ref(db, userPath()));
+    if (!snap.exists()) {
+      await set(ref(db, userPath()), {
+        baseCurrency: 'TWD',
+        currencies: { TWD: { name: '新台幣', rate: 1, createdAt: Date.now() } },
+      });
+    }
+  } catch (err) {
+    console.error('初始化資料失敗', err);
+  }
+}
+
+function attachDbListeners() {
+  detachDbListeners();
+
+  // 連線狀態
+  const connUnsub = onValue(ref(db, '.info/connected'), snap => {
+    const connected = snap.val();
+    const pill = document.getElementById('connection-status');
+    if (connected) {
+      pill.textContent = '已同步';
+      pill.className = 'connection-pill ok';
+    } else {
+      pill.textContent = '離線中';
+      pill.className = 'connection-pill off';
+    }
+  });
+  dbUnsubs.push(connUnsub);
+
+  // 主資料
+  const dataUnsub = onValue(ref(db, userPath()), snap => {
+    const data = snap.val() || {};
+    state = {
+      baseCurrency: data.baseCurrency || 'TWD',
+      currencies: data.currencies || {},
+      people: data.people || {},
+      expenses: data.expenses || {},
+    };
+    if (!initialized) {
+      initialized = true;
+      initExpenseForm();
+      showApp();
+      maybeMigrateLocalStorage();
+    }
+    renderAll();
+  }, err => {
+    console.error('資料讀取失敗', err);
+    document.getElementById('connection-status').textContent = '錯誤';
+    alert('讀取資料失敗：' + err.message + '\n\n請確認 Realtime Database 規則已設定為允許登入用戶讀寫自己的 users/{uid}/travelTracker 路徑。');
+  });
+  dbUnsubs.push(dataUnsub);
+}
+
+function detachDbListeners() {
+  dbUnsubs.forEach(unsub => { try { unsub(); } catch {} });
+  dbUnsubs = [];
+}
+
+// ============================================================
+// 從舊版 localStorage 自動遷移（僅當雲端為空且本機有資料時）
+// ============================================================
+async function maybeMigrateLocalStorage() {
+  const raw = localStorage.getItem('travel-expense-tracker-v1');
+  if (!raw) return;
+  const hasCloudData =
+    Object.keys(state.people).length > 0 ||
+    Object.keys(state.expenses).length > 0;
+  if (hasCloudData) return;
+
+  if (!confirm('偵測到舊版本機資料，要匯入到雲端嗎？\n（此動作只會詢問一次）')) {
+    localStorage.removeItem('travel-expense-tracker-v1');
+    return;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    const normalized = normaliseImported(parsed);
+    await set(ref(db, userPath()), normalized);
+    localStorage.removeItem('travel-expense-tracker-v1');
+    alert('遷移成功');
+  } catch (err) {
+    alert('遷移失敗：' + err.message);
+  }
+}
+
+// ============================================================
+// 匯入資料的格式正規化（支援舊陣列格式 / 新物件格式）
+// ============================================================
+function normaliseImported(data) {
+  const result = {
+    baseCurrency: data.baseCurrency || 'TWD',
+    currencies: {},
+    people: {},
+    expenses: {},
+  };
+
+  if (Array.isArray(data.currencies)) {
+    data.currencies.forEach(c => {
+      result.currencies[c.code] = { name: c.name, rate: c.rate, createdAt: Date.now() };
+    });
+  } else if (data.currencies && typeof data.currencies === 'object') {
+    Object.entries(data.currencies).forEach(([code, c]) => {
+      result.currencies[code] = { name: c.name, rate: c.rate, createdAt: c.createdAt || Date.now() };
+    });
+  }
+  if (!result.currencies[result.baseCurrency]) {
+    result.currencies[result.baseCurrency] = { name: result.baseCurrency, rate: 1, createdAt: Date.now() };
+  }
+
+  if (Array.isArray(data.people)) {
+    data.people.forEach(p => {
+      result.people[p.id] = { name: p.name, createdAt: Date.now() };
+    });
+  } else if (data.people && typeof data.people === 'object') {
+    Object.entries(data.people).forEach(([id, p]) => {
+      result.people[id] = { name: p.name, createdAt: p.createdAt || Date.now() };
+    });
+  }
+
+  if (Array.isArray(data.expenses)) {
+    data.expenses.forEach(e => {
+      const splits = {};
+      if (Array.isArray(e.splits)) {
+        e.splits.forEach(s => splits[s.personId] = s.amount);
+      } else if (e.splits && typeof e.splits === 'object') {
+        Object.assign(splits, e.splits);
+      }
+      result.expenses[e.id] = {
+        desc: e.desc, date: e.date, currency: e.currency,
+        amount: e.amount, payer: e.payer, splits,
+        createdAt: Date.now(),
+      };
+    });
+  } else if (data.expenses && typeof data.expenses === 'object') {
+    Object.entries(data.expenses).forEach(([id, e]) => {
+      result.expenses[id] = {
+        desc: e.desc, date: e.date, currency: e.currency,
+        amount: e.amount, payer: e.payer,
+        splits: e.splits || {},
+        createdAt: e.createdAt || Date.now(),
+      };
+    });
+  }
+
+  return result;
+}
+
+// ============================================================
+// 分頁切換
+// ============================================================
+document.getElementById('nav').addEventListener('click', e => {
+  if (e.target.tagName !== 'BUTTON') return;
+  const tab = e.target.dataset.tab;
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('section.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + tab));
+  if (tab === 'settlement') renderSettlement();
+});
+
+// ============================================================
+// 人員 CRUD
+// ============================================================
+function renderPeople() {
+  const list = document.getElementById('person-list');
+  const arr = peopleArray();
+  if (arr.length === 0) {
+    list.innerHTML = '<div class="empty">尚未新增人員。請先在此頁加入參與者。</div>';
+  } else {
+    list.innerHTML = '<table><thead><tr><th>姓名</th><th style="width:120px"></th></tr></thead><tbody>' +
+      arr.map(p => `
+        <tr>
+          <td>${escapeHtml(p.name)}</td>
+          <td><div class="actions"><button class="btn danger" data-action="del-person" data-id="${p.id}">刪除</button></div></td>
+        </tr>`).join('') +
+      '</tbody></table>';
+  }
+}
+
+document.getElementById('person-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const input = document.getElementById('person-name');
+  const name = input.value.trim();
+  if (!name) return;
+  if (peopleArray().some(p => p.name === name)) { alert('已有同名人員'); return; }
+  const id = uid();
+  await set(ref(db, userPath(`people/${id}`)), { name, createdAt: Date.now() });
+  input.value = '';
+});
+
+document.getElementById('person-list').addEventListener('click', async e => {
+  const btn = e.target.closest('button[data-action="del-person"]');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const used = expensesArray().some(x => x.payer === id || (x.splits && x.splits[id] !== undefined));
+  if (used) {
+    if (!confirm('此人有相關消費紀錄，確定要刪除？相關消費的此人欄位會變成「（已刪除）」。')) return;
+  } else {
+    if (!confirm('確定刪除此人？')) return;
+  }
+  await remove(ref(db, userPath(`people/${id}`)));
+});
+
+// ============================================================
+// 幣別 CRUD
+// ============================================================
+function renderCurrencies() {
+  const baseSel = document.getElementById('base-currency-select');
+  const arr = currenciesArray();
+  baseSel.innerHTML = arr.map(c =>
+    `<option value="${c.code}" ${c.code === state.baseCurrency ? 'selected' : ''}>${c.code} ${escapeHtml(c.name)}</option>`
+  ).join('');
+
+  const list = document.getElementById('currency-list');
+  if (arr.length === 0) {
+    list.innerHTML = '<div class="empty">尚無幣別</div>';
+  } else {
+    list.innerHTML = '<table><thead><tr><th>代碼</th><th>名稱</th><th class="num">匯率（1 單位 = ? 基準幣）</th><th style="width:100px"></th></tr></thead><tbody>' +
+      arr.map(c => `
+        <tr>
+          <td><strong>${c.code}</strong>${c.code === state.baseCurrency ? '<span class="badge-base">基準</span>' : ''}</td>
+          <td>${escapeHtml(c.name)}</td>
+          <td class="num">${c.code === state.baseCurrency ? '1' : c.rate}</td>
+          <td>
+            <div class="actions">
+              ${c.code === state.baseCurrency ? '' : `<button class="btn danger" data-action="del-currency" data-code="${c.code}">刪除</button>`}
+            </div>
+          </td>
+        </tr>`).join('') +
+      '</tbody></table>';
+  }
+}
+
+document.getElementById('currency-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const code = document.getElementById('currency-code').value.trim().toUpperCase();
+  const name = document.getElementById('currency-name').value.trim();
+  const rate = parseFloat(document.getElementById('currency-rate').value);
+  if (!code || !name || !(rate > 0)) { alert('請填寫完整且匯率須大於 0'); return; }
+  const existing = state.currencies[code];
+  await set(ref(db, userPath(`currencies/${code}`)), {
+    name,
+    rate: code === state.baseCurrency ? 1 : rate,
+    createdAt: existing?.createdAt || Date.now(),
+  });
+  document.getElementById('currency-form').reset();
+});
+
+document.getElementById('currency-list').addEventListener('click', async e => {
+  const btn = e.target.closest('button[data-action="del-currency"]');
+  if (!btn) return;
+  const code = btn.dataset.code;
+  if (expensesArray().some(x => x.currency === code)) {
+    alert('此幣別有相關消費紀錄，無法刪除。');
+    return;
+  }
+  if (!confirm(`確定刪除 ${code}？`)) return;
+  await remove(ref(db, userPath(`currencies/${code}`)));
+});
+
+document.getElementById('base-currency-select').addEventListener('change', async e => {
+  const newBase = e.target.value;
+  if (newBase === state.baseCurrency) return;
+  if (!confirm(`將基準幣改為 ${newBase}？\n\n注意：原本各幣別對舊基準幣的匯率，需要重新檢視是否正確（不會自動換算）。`)) {
+    e.target.value = state.baseCurrency;
+    return;
+  }
+  const updates = {};
+  updates[userPath('baseCurrency')] = newBase;
+  updates[userPath(`currencies/${newBase}/rate`)] = 1;
+  await update(ref(db), updates);
+});
+
+// ============================================================
+// 消費表單
+// ============================================================
+function refreshExpenseFormDropdowns() {
+  const arr = currenciesArray();
+  const curSel = document.getElementById('exp-currency');
+  const curVal = curSel.value;
+  curSel.innerHTML = arr.map(c =>
+    `<option value="${c.code}">${c.code} ${escapeHtml(c.name)}</option>`).join('');
+  if (curVal && state.currencies[curVal]) curSel.value = curVal;
+  else if (state.baseCurrency) curSel.value = state.baseCurrency;
+
+  const peoples = peopleArray();
+  const payerSel = document.getElementById('exp-payer');
+  const prevPayer = payerSel.value;
+  payerSel.innerHTML = '<option value="">-- 選擇付款人 --</option>' +
+    peoples.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+  if (prevPayer && state.people[prevPayer]) payerSel.value = prevPayer;
+
+  refreshAddSplitDropdown();
+}
+
+function refreshAddSplitDropdown() {
+  const sel = document.getElementById('add-split-person');
+  const peoples = peopleArray();
+  const usedIds = new Set(currentSplits.map(s => s.personId));
+  const available = peoples.filter(p => !usedIds.has(p.id));
+  if (available.length === 0) {
+    sel.innerHTML = '<option value="">（已全部加入）</option>';
+    sel.disabled = true;
+    document.getElementById('add-split-btn').disabled = true;
+  } else {
+    sel.innerHTML = available.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+    sel.disabled = false;
+    document.getElementById('add-split-btn').disabled = false;
+  }
+}
+
+function renderSplits() {
+  const container = document.getElementById('splits-container');
+  if (currentSplits.length === 0) {
+    container.innerHTML = '<div class="empty" style="padding:12px">尚未加入分攤人</div>';
+  } else {
+    container.innerHTML = currentSplits.map((s, i) => {
+      const person = getPerson(s.personId);
+      const name = person ? escapeHtml(person.name) : '（已刪除）';
+      return `
+        <div class="split-row">
+          <div class="name">${name}</div>
+          <input type="number" step="0.01" min="0" data-split-idx="${i}" value="${s.amount}" placeholder="金額">
+          <button type="button" class="btn ghost" data-remove-split="${i}" aria-label="移除">×</button>
+        </div>`;
+    }).join('');
+  }
+  updateSplitTotalCheck();
+  refreshAddSplitDropdown();
+}
+
+function updateSplitTotalCheck() {
+  const total = currentSplits.reduce((a, s) => a + (parseFloat(s.amount) || 0), 0);
+  const expAmt = parseFloat(document.getElementById('exp-amount').value) || 0;
+  const el = document.getElementById('split-total-check');
+  const cur = document.getElementById('exp-currency').value || '';
+  const diff = +(expAmt - total).toFixed(2);
+  if (currentSplits.length === 0) { el.textContent = ''; return; }
+  if (Math.abs(diff) < 0.005) {
+    el.className = 'total-check ok';
+    el.textContent = `分攤總計：${fmtMoney(total, cur)}（與消費金額一致）`;
+  } else {
+    el.className = 'total-check bad';
+    el.textContent = `分攤總計：${fmtMoney(total, cur)}（與消費金額差 ${fmtMoney(diff, cur)}）`;
+  }
+}
+
+document.getElementById('add-split-btn').addEventListener('click', () => {
+  const personId = document.getElementById('add-split-person').value;
+  if (!personId) return;
+  if (currentSplits.some(s => s.personId === personId)) return;
+  currentSplits.push({ personId, amount: 0 });
+  renderSplits();
+});
+
+document.getElementById('split-evenly-btn').addEventListener('click', () => {
+  if (currentSplits.length === 0) {
+    currentSplits = peopleArray().map(p => ({ personId: p.id, amount: 0 }));
+  }
+  if (currentSplits.length === 0) return;
+  const expAmt = parseFloat(document.getElementById('exp-amount').value) || 0;
+  if (expAmt <= 0) { alert('請先輸入消費金額'); return; }
+  const each = Math.round((expAmt / currentSplits.length) * 100) / 100;
+  currentSplits.forEach(s => s.amount = each);
+  const total = currentSplits.reduce((a, s) => a + s.amount, 0);
+  const diff = +(expAmt - total).toFixed(2);
+  if (Math.abs(diff) >= 0.005 && currentSplits.length > 0) {
+    currentSplits[0].amount = +(currentSplits[0].amount + diff).toFixed(2);
+  }
+  renderSplits();
+});
+
+document.getElementById('splits-container').addEventListener('input', e => {
+  const idx = e.target.dataset.splitIdx;
+  if (idx === undefined) return;
+  currentSplits[+idx].amount = parseFloat(e.target.value) || 0;
+  updateSplitTotalCheck();
+});
+
+document.getElementById('splits-container').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-remove-split]');
+  if (!btn) return;
+  const idx = +btn.dataset.removeSplit;
+  currentSplits.splice(idx, 1);
+  renderSplits();
+});
+
+document.getElementById('exp-amount').addEventListener('input', updateSplitTotalCheck);
+document.getElementById('exp-currency').addEventListener('change', updateSplitTotalCheck);
+
+document.getElementById('expense-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (peopleArray().length === 0) { alert('請先到「人員」頁面新增人員'); return; }
+
+  const desc = document.getElementById('exp-desc').value.trim();
+  const date = document.getElementById('exp-date').value;
+  const currency = document.getElementById('exp-currency').value;
+  const amount = parseFloat(document.getElementById('exp-amount').value);
+  const payer = document.getElementById('exp-payer').value;
+
+  if (!desc || !date || !currency || !(amount > 0) || !payer) { alert('請填寫完整資料'); return; }
+  if (currentSplits.length === 0) { alert('請至少加入一位分攤人'); return; }
+
+  const splitTotal = currentSplits.reduce((a, s) => a + (parseFloat(s.amount) || 0), 0);
+  if (Math.abs(splitTotal - amount) > 0.01) {
+    if (!confirm(`分攤總計（${fmtMoney(splitTotal)}）與消費金額（${fmtMoney(amount)}）不一致，仍要儲存？`)) return;
+  }
+
+  const splits = {};
+  currentSplits.forEach(s => { splits[s.personId] = parseFloat(s.amount) || 0; });
+
+  const id = editingExpenseId || uid();
+  const existing = editingExpenseId ? state.expenses[editingExpenseId] : null;
+  await set(ref(db, userPath(`expenses/${id}`)), {
+    desc, date, currency, amount, payer, splits,
+    createdAt: existing?.createdAt || Date.now(),
+  });
+  resetExpenseForm();
+});
+
+document.getElementById('reset-expense-btn').addEventListener('click', resetExpenseForm);
+
+function initExpenseForm() {
+  document.getElementById('exp-date').value = todayStr();
+  if (state.baseCurrency) document.getElementById('exp-currency').value = state.baseCurrency;
+}
+
+function resetExpenseForm() {
+  editingExpenseId = null;
+  currentSplits = [];
+  document.getElementById('expense-form').reset();
+  document.getElementById('exp-date').value = todayStr();
+  if (state.baseCurrency) {
+    const sel = document.getElementById('exp-currency');
+    if (state.currencies[state.baseCurrency]) sel.value = state.baseCurrency;
+  }
+  document.getElementById('expense-form-title').textContent = '新增消費';
+  document.getElementById('save-expense-btn').textContent = '儲存消費';
+  document.getElementById('reset-expense-btn').style.display = 'none';
+  renderSplits();
+}
+
+function startEditExpense(id) {
+  const exp = state.expenses[id];
+  if (!exp) return;
+  editingExpenseId = id;
+  document.getElementById('exp-desc').value = exp.desc;
+  document.getElementById('exp-date').value = exp.date;
+  document.getElementById('exp-currency').value = exp.currency;
+  document.getElementById('exp-amount').value = exp.amount;
+  document.getElementById('exp-payer').value = exp.payer;
+  currentSplits = Object.entries(exp.splits || {}).map(([personId, amount]) => ({ personId, amount }));
+  document.getElementById('expense-form-title').textContent = '編輯消費';
+  document.getElementById('save-expense-btn').textContent = '更新';
+  document.getElementById('reset-expense-btn').style.display = 'inline-block';
+  renderSplits();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ============================================================
+// 消費列表
+// ============================================================
+function renderExpenses() {
+  const list = document.getElementById('expense-list');
+  const arr = expensesArray();
+  document.getElementById('expense-count').textContent = `${arr.length} 筆`;
+  if (arr.length === 0) {
+    list.innerHTML = '<div class="empty">尚無消費紀錄</div>';
+    return;
+  }
+  const sorted = [...arr].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  list.innerHTML = '<table><thead><tr><th>日期</th><th>描述</th><th>付款人</th><th>分攤</th><th class="num">金額</th><th style="width:140px"></th></tr></thead><tbody>' +
+    sorted.map(exp => {
+      const payer = getPerson(exp.payer);
+      const splitsText = Object.entries(exp.splits || {}).map(([pid, amt]) => {
+        const p = getPerson(pid);
+        return `${p ? escapeHtml(p.name) : '（已刪除）'} ${fmtMoney(amt)}`;
+      }).join('、');
+      return `
+        <tr>
+          <td>${escapeHtml(exp.date)}</td>
+          <td>${escapeHtml(exp.desc)}</td>
+          <td>${payer ? escapeHtml(payer.name) : '（已刪除）'}</td>
+          <td style="font-size:13px; color:var(--muted)">${splitsText}</td>
+          <td class="num">${fmtMoney(exp.amount, exp.currency)}</td>
+          <td>
+            <div class="actions">
+              <button class="btn" data-action="edit-exp" data-id="${exp.id}">編輯</button>
+              <button class="btn danger" data-action="del-exp" data-id="${exp.id}">刪除</button>
+            </div>
+          </td>
+        </tr>`;
+    }).join('') +
+    '</tbody></table>';
+}
+
+document.getElementById('expense-list').addEventListener('click', async e => {
+  const editBtn = e.target.closest('button[data-action="edit-exp"]');
+  const delBtn = e.target.closest('button[data-action="del-exp"]');
+  if (editBtn) startEditExpense(editBtn.dataset.id);
+  if (delBtn) {
+    if (!confirm('確定刪除此筆消費？')) return;
+    await remove(ref(db, userPath(`expenses/${delBtn.dataset.id}`)));
+  }
+});
+
+// ============================================================
+// 結算
+// ============================================================
+function calculateSettlement() {
+  const balances = {};
+  peopleArray().forEach(p => balances[p.id] = 0);
+
+  for (const exp of expensesArray()) {
+    const cur = getCurrency(exp.currency);
+    const rate = cur ? cur.rate : 1;
+    const totalBase = (exp.amount || 0) * rate;
+    if (balances[exp.payer] !== undefined) balances[exp.payer] += totalBase;
+    for (const [pid, amt] of Object.entries(exp.splits || {})) {
+      const splitBase = (amt || 0) * rate;
+      if (balances[pid] !== undefined) balances[pid] -= splitBase;
+    }
+  }
+
+  Object.keys(balances).forEach(k => balances[k] = Math.round(balances[k] * 100) / 100);
+
+  const creditors = [], debtors = [];
+  for (const [id, bal] of Object.entries(balances)) {
+    if (bal > 0.005) creditors.push({ id, amount: bal });
+    else if (bal < -0.005) debtors.push({ id, amount: -bal });
+  }
+  creditors.sort((a, b) => b.amount - a.amount);
+  debtors.sort((a, b) => b.amount - a.amount);
+
+  const transactions = [];
+  let i = 0, j = 0;
+  while (i < creditors.length && j < debtors.length) {
+    const amt = Math.min(creditors[i].amount, debtors[j].amount);
+    transactions.push({ from: debtors[j].id, to: creditors[i].id, amount: Math.round(amt * 100) / 100 });
+    creditors[i].amount -= amt;
+    debtors[j].amount -= amt;
+    if (creditors[i].amount < 0.005) i++;
+    if (debtors[j].amount < 0.005) j++;
+  }
+  return { balances, transactions };
+}
+
+function renderSettlement() {
+  const { balances, transactions } = calculateSettlement();
+  const base = state.baseCurrency;
+  const peoples = peopleArray();
+  const balDiv = document.getElementById('balance-list');
+  if (peoples.length === 0) {
+    balDiv.innerHTML = '<div class="empty">尚無人員</div>';
+    document.getElementById('transaction-list').innerHTML = '';
+    return;
+  }
+  balDiv.innerHTML = '<table><thead><tr><th>姓名</th><th class="num">淨額（' + base + '）</th><th>狀態</th></tr></thead><tbody>' +
+    peoples.map(p => {
+      const bal = balances[p.id] || 0;
+      let cls = 'balance-zero', text = '已結清';
+      if (bal > 0.005) { cls = 'balance-pos'; text = `應收 ${fmtMoney(bal, base)}`; }
+      else if (bal < -0.005) { cls = 'balance-neg'; text = `應付 ${fmtMoney(-bal, base)}`; }
+      return `<tr><td>${escapeHtml(p.name)}</td><td class="num ${cls}">${fmtMoney(bal, base)}</td><td class="${cls}">${text}</td></tr>`;
+    }).join('') +
+    '</tbody></table>';
+
+  const txDiv = document.getElementById('transaction-list');
+  if (transactions.length === 0) {
+    txDiv.innerHTML = '<div class="empty">無需任何轉帳，已全部平衡。</div>';
+  } else {
+    txDiv.innerHTML = transactions.map(t => {
+      const from = getPerson(t.from);
+      const to = getPerson(t.to);
+      return `<div class="transaction">
+        <div><strong>${from ? escapeHtml(from.name) : '?'}</strong> → <strong>${to ? escapeHtml(to.name) : '?'}</strong></div>
+        <div class="amt">${fmtMoney(t.amount, base)}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ============================================================
+// 匯入 / 匯出 / 清除
+// ============================================================
+document.getElementById('export-btn').addEventListener('click', () => {
+  const exportData = {
+    baseCurrency: state.baseCurrency,
+    currencies: state.currencies,
+    people: state.people,
+    expenses: state.expenses,
+  };
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `travel-expense-${todayStr()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('import-btn').addEventListener('click', () => {
+  document.getElementById('import-file').click();
+});
+document.getElementById('import-file').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!confirm('匯入會覆蓋雲端目前所有資料，確定？')) return;
+    const normalized = normaliseImported(data);
+    await set(ref(db, userPath()), normalized);
+    alert('匯入成功');
+  } catch (err) {
+    alert('匯入失敗：' + err.message);
+  }
+  e.target.value = '';
+});
+
+document.getElementById('reset-btn').addEventListener('click', async () => {
+  if (!confirm('確定清除雲端全部資料？此動作無法復原。')) return;
+  if (!confirm('再次確認：所有人員、幣別、消費紀錄都會被清除。')) return;
+  await remove(ref(db, userPath()));
+  // 重建基準幣
+  await set(ref(db, userPath()), {
+    baseCurrency: 'TWD',
+    currencies: { TWD: { name: '新台幣', rate: 1, createdAt: Date.now() } },
+  });
+});
+
+// ============================================================
+// 統一渲染
+// ============================================================
+function renderAll() {
+  renderPeople();
+  renderCurrencies();
+  refreshExpenseFormDropdowns();
+  renderExpenses();
+  // 結算頁僅在切到該分頁時 render（避免每次 db update 都計算）
+  if (document.getElementById('tab-settlement').classList.contains('active')) {
+    renderSettlement();
+  }
+}
+</script>
+</body>
+</html>
