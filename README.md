@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/27561708/README.md)
 # 旅遊記帳 Travel Split
 
 一個多幣別、可自訂分攤方式的旅遊記帳網頁應用，介面為繁體中文。

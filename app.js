@@ -16,24 +16,24 @@ const FieldValue = firebase.firestore.FieldValue;
 
 // ===== Currency definitions =====
 const CURRENCIES = [
-  { code: 'TWD', name: '新台幣' },
-  { code: 'JPY', name: '日圓' },
-  { code: 'USD', name: '美元' },
-  { code: 'EUR', name: '歐元' },
-  { code: 'KRW', name: '韓元' },
-  { code: 'CNY', name: '人民幣' },
-  { code: 'HKD', name: '港幣' },
-  { code: 'THB', name: '泰銖' },
-  { code: 'GBP', name: '英鎊' },
-  { code: 'SGD', name: '新加坡幣' },
-  { code: 'MYR', name: '馬來西亞令吉' },
-  { code: 'VND', name: '越南盾' },
-  { code: 'AUD', name: '澳幣' },
-  { code: 'CAD', name: '加幣' },
-  { code: 'IDR', name: '印尼盾' },
-  { code: 'PHP', name: '菲律賓披索' },
-  { code: 'CHF', name: '瑞士法郎' },
-  { code: 'NZD', name: '紐西蘭幣' },
+  { code: 'TWD', name: '新台幣', flag: '🇹🇼' },
+  { code: 'JPY', name: '日圓', flag: '🇯🇵' },
+  { code: 'USD', name: '美元', flag: '🇺🇸' },
+  { code: 'EUR', name: '歐元', flag: '🇪🇺' },
+  { code: 'KRW', name: '韓元', flag: '🇰🇷' },
+  { code: 'CNY', name: '人民幣', flag: '🇨🇳' },
+  { code: 'HKD', name: '港幣', flag: '🇭🇰' },
+  { code: 'THB', name: '泰銖', flag: '🇹🇭' },
+  { code: 'GBP', name: '英鎊', flag: '🇬🇧' },
+  { code: 'SGD', name: '新加坡幣', flag: '🇸🇬' },
+  { code: 'MYR', name: '馬來西亞令吉', flag: '🇲🇾' },
+  { code: 'VND', name: '越南盾', flag: '🇻🇳' },
+  { code: 'AUD', name: '澳幣', flag: '🇦🇺' },
+  { code: 'CAD', name: '加幣', flag: '🇨🇦' },
+  { code: 'IDR', name: '印尼盾', flag: '🇮🇩' },
+  { code: 'PHP', name: '菲律賓披索', flag: '🇵🇭' },
+  { code: 'CHF', name: '瑞士法郎', flag: '🇨🇭' },
+  { code: 'NZD', name: '紐西蘭幣', flag: '🇳🇿' },
 ];
 
 const CATEGORY_ICONS = {
@@ -41,14 +41,11 @@ const CATEGORY_ICONS = {
   lodging: '🏨', ticket: '🎫', shopping: '🛍️'
 };
 
-const CATEGORY_NAMES = {
-  general: '一般', food: '餐飲', transport: '交通',
-  lodging: '住宿', ticket: '門票', shopping: '購物'
-};
+const TRIP_EMOJIS = ['🏝️', '🗼', '🗽', '🏯', '🏔️', '🌋', '🌴', '🚆', '⛩️', '🎡', '🏖️', '🌅'];
 
 const AVATAR_COLORS = [
-  '#ff6b35', '#2ec4b6', '#3b82f6', '#8b5cf6',
-  '#ec4899', '#f59e0b', '#10b981', '#ef4444',
+  '#f97316', '#06b6d4', '#10b981', '#8b5cf6',
+  '#ec4899', '#f59e0b', '#3b82f6', '#ef4444',
   '#06b6d4', '#84cc16', '#a855f7', '#f43f5e'
 ];
 
@@ -108,6 +105,29 @@ function initials(name) {
   return name.trim().slice(0, 2);
 }
 
+function tripEmoji(name) {
+  if (!name) return '✈️';
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash << 5) - hash + name.charCodeAt(i);
+  return TRIP_EMOJIS[Math.abs(hash) % TRIP_EMOJIS.length];
+}
+
+function tripTheme(name) {
+  if (!name) return 0;
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash << 5) - hash + name.charCodeAt(i);
+  return Math.abs(hash) % 6;
+}
+
+const TRIP_GRADIENTS = [
+  ['#fb923c', '#ec4899'],
+  ['#06b6d4', '#3b82f6'],
+  ['#10b981', '#14b8a6'],
+  ['#8b5cf6', '#ec4899'],
+  ['#f59e0b', '#ef4444'],
+  ['#6366f1', '#06b6d4'],
+];
+
 // ===== Auth =====
 function showLogin() {
   $('loading').classList.add('hidden');
@@ -139,7 +159,6 @@ async function handleGoogleSignIn() {
     await auth.signInWithPopup(provider);
   } catch (err) {
     console.error(err);
-    // Popup blocked or browser doesn't support popup → fallback to redirect
     if (
       err.code === 'auth/popup-blocked' ||
       err.code === 'auth/operation-not-supported-in-this-environment' ||
@@ -156,11 +175,8 @@ async function handleGoogleSignIn() {
     }
     let msg = err.message || '登入失敗';
     if (err.code === 'auth/popup-closed-by-user') msg = '視窗已關閉，請再試一次。';
-    else if (err.code === 'auth/unauthorized-domain') {
-      msg = '此網域未授權。請到 Firebase Console → Authentication → Settings → Authorized domains 加入此網域。若直接以 file:// 開啟，請改用本地伺服器（http://localhost）。';
-    } else if (err.code === 'auth/operation-not-allowed') {
-      msg = '尚未啟用 Google 登入。請到 Firebase Console → Authentication → Sign-in method 啟用 Google。';
-    }
+    else if (err.code === 'auth/unauthorized-domain') msg = '此網域未授權。請到 Firebase Console → Authentication → Settings → Authorized domains 加入此網域。';
+    else if (err.code === 'auth/operation-not-allowed') msg = '尚未啟用 Google 登入。請到 Firebase Console → Authentication → Sign-in method 啟用 Google。';
     showLoginError(msg);
     btn.disabled = false;
   }
@@ -192,7 +208,8 @@ function updateUserUI() {
     $('user-avatar-img').src = photo;
     $('user-info-avatar').src = photo;
   } else {
-    const fallback = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><rect width='40' height='40' fill='%23ff6b35'/><text x='50%' y='55%' text-anchor='middle' fill='white' font-size='18' font-family='sans-serif' font-weight='700'>${encodeURIComponent(name.slice(0,1))}</text></svg>`;
+    const initial = encodeURIComponent(name.slice(0, 1).toUpperCase());
+    const fallback = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><rect width='40' height='40' fill='%23f97316'/><text x='50%' y='55%' text-anchor='middle' fill='white' font-size='18' font-family='sans-serif' font-weight='700'>${initial}</text></svg>`;
     $('user-avatar-img').src = fallback;
     $('user-info-avatar').src = fallback;
   }
@@ -201,15 +218,11 @@ function updateUserUI() {
 }
 
 function startAuth() {
-  // Handle redirect result errors (no-op on success — onAuthStateChanged takes over)
   auth.getRedirectResult().catch((err) => {
     console.error('Redirect sign-in error:', err);
     let msg = err.message || '登入失敗';
-    if (err.code === 'auth/unauthorized-domain') {
-      msg = '此網域未授權。請到 Firebase Console → Authentication → Settings → Authorized domains 加入此網域。';
-    } else if (err.code === 'auth/operation-not-allowed') {
-      msg = '尚未啟用 Google 登入。請到 Firebase Console → Authentication → Sign-in method 啟用 Google。';
-    }
+    if (err.code === 'auth/unauthorized-domain') msg = '此網域未授權。請到 Firebase Console → Authentication → Settings → Authorized domains 加入此網域。';
+    else if (err.code === 'auth/operation-not-allowed') msg = '尚未啟用 Google 登入。';
     showLoginError(msg);
   });
 
@@ -242,7 +255,6 @@ async function bootstrap() {
   showTripsView();
 }
 
-// ===== Load trips =====
 function clearSubs() {
   state.unsubscribers.forEach((u) => u());
   state.unsubscribers = [];
@@ -263,32 +275,53 @@ async function loadTrips() {
 function renderTripsList() {
   const list = $('trips-list');
   list.innerHTML = '';
+
+  // Hero stats
+  const totalTrips = state.trips.length;
+  const totalExpenses = state.trips.reduce((s, t) => s + (t.expenseCount || 0), 0);
+  const totalMembers = state.trips.reduce((s, t) => s + (t.memberCount || 0), 0);
+  $('hero-stats').innerHTML = `
+    <span class="hero-stat">🗺️ ${totalTrips} 旅程</span>
+    <span class="hero-stat">📋 ${totalExpenses} 筆支出</span>
+    <span class="hero-stat">👥 ${totalMembers} 旅伴</span>
+  `;
+
   if (state.trips.length === 0) {
     $('trips-empty').classList.remove('hidden');
+    document.querySelector('.section-title').classList.add('hidden');
     return;
   }
   $('trips-empty').classList.add('hidden');
+  document.querySelector('.section-title').classList.remove('hidden');
 
   state.trips.forEach((trip) => {
-    const card = create('div', { className: 'trip-card' });
+    const themeIdx = tripTheme(trip.name || '');
+    const card = create('div', { className: 'trip-card', attrs: { 'data-theme': themeIdx } });
     card.addEventListener('click', () => openTrip(trip.id));
 
     const memberCount = (trip.memberCount ?? 0);
     const expenseCount = (trip.expenseCount ?? 0);
     const totalAmount = (trip.totalAmount ?? 0);
+    const emoji = tripEmoji(trip.name || '');
 
     card.innerHTML = `
-      <div class="trip-card-name">${escapeHtml(trip.name)}</div>
-      <div class="trip-card-meta">
-        <span>${memberCount} 位成員</span>
-        <span class="dot"></span>
-        <span>${expenseCount} 筆支出</span>
+      <div class="trip-card-banner">
+        <div class="trip-card-emoji">${emoji}</div>
       </div>
-      <div class="trip-card-bottom">
-        <div>
-          <div class="trip-card-currency">總計 (${trip.baseCurrency})</div>
+      <div class="trip-card-body">
+        <div class="trip-card-name">${escapeHtml(trip.name)}</div>
+        <div class="trip-card-meta">
+          <span>👥 ${memberCount} 旅伴</span>
+          <span class="dot"></span>
+          <span>📋 ${expenseCount} 筆</span>
         </div>
-        <div class="trip-card-amount">${fmtNum(totalAmount)}</div>
+        <div class="trip-card-bottom">
+          <div>
+            <div class="trip-card-currency">${trip.baseCurrency} 總計</div>
+            <div class="trip-card-amount">${fmtNum(totalAmount)}</div>
+          </div>
+          <div class="trip-card-arrow">→</div>
+        </div>
       </div>
     `;
     list.appendChild(card);
@@ -347,8 +380,16 @@ async function updateTripStats() {
 // ===== Render: trip detail =====
 function renderTripDetail() {
   if (!state.currentTrip) return;
+
+  const themeIdx = tripTheme(state.currentTrip.name || '');
+  const [from, to] = TRIP_GRADIENTS[themeIdx];
+  const hero = $('trip-detail-hero');
+  hero.style.setProperty('--theme-from', from);
+  hero.style.setProperty('--theme-to', to);
+
+  $('trip-detail-emoji').textContent = tripEmoji(state.currentTrip.name || '');
   $('trip-name').textContent = state.currentTrip.name;
-  $('trip-meta').textContent = `${state.members.length} 位成員 · 主要幣別 ${state.currentTrip.baseCurrency}`;
+  $('trip-meta').textContent = `${state.members.length} 位旅伴 · 主要幣別 ${state.currentTrip.baseCurrency}`;
 
   const total = state.expenses.reduce((s, e) => s + (e.baseAmount || 0), 0);
   $('total-expense').textContent = `${state.currentTrip.baseCurrency} ${fmtNum(total)}`;
@@ -362,11 +403,22 @@ function renderTripDetail() {
 function renderExpensesList() {
   const container = $('expenses-list');
   container.innerHTML = '';
+  const empty = $('expenses-empty');
+
   if (state.expenses.length === 0) {
-    $('expenses-empty').classList.remove('hidden');
+    empty.classList.remove('hidden');
+    if (state.members.length === 0) {
+      $('expenses-empty-title').textContent = '先邀請旅伴吧';
+      $('expenses-empty-text').textContent = '加入夥伴後，就能開始記錄支出';
+      $('expenses-empty-action').classList.remove('hidden');
+    } else {
+      $('expenses-empty-title').textContent = '還沒有支出';
+      $('expenses-empty-text').textContent = '點右下角 + 新增第一筆';
+      $('expenses-empty-action').classList.add('hidden');
+    }
     return;
   }
-  $('expenses-empty').classList.add('hidden');
+  empty.classList.add('hidden');
 
   let lastDate = null;
   state.expenses.forEach((exp) => {
@@ -399,6 +451,12 @@ function renderExpensesList() {
 function renderMembersList() {
   const container = $('members-list');
   container.innerHTML = '';
+  const empty = $('members-empty');
+  if (state.members.length === 0) {
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
   state.members.forEach((m) => {
     const paidTotal = state.expenses
       .filter((e) => e.payerId === m.id)
@@ -479,7 +537,7 @@ function renderSettlement() {
   const balContainer = $('balance-list');
   balContainer.innerHTML = '';
   if (balances.length === 0) {
-    balContainer.innerHTML = '<div class="empty-state"><p>請先新增成員</p></div>';
+    balContainer.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><h3>請先新增旅伴</h3></div>';
   }
   balances.forEach((b) => {
     let cls = 'zero', prefix = '';
@@ -488,7 +546,7 @@ function renderSettlement() {
     const item = create('div', { className: 'balance-item' });
     item.innerHTML = `
       <div class="balance-name">
-        <div class="avatar" style="background: ${colorFor(b.name)}; width: 32px; height: 32px; font-size: 13px">${escapeHtml(initials(b.name))}</div>
+        <div class="avatar" style="background: ${colorFor(b.name)}; width: 34px; height: 34px; font-size: 13px">${escapeHtml(initials(b.name))}</div>
         ${escapeHtml(b.name)}
       </div>
       <div class="balance-amount ${cls}">${prefix}${baseCurrency} ${fmtNum(Math.abs(b.balance))}</div>
@@ -505,14 +563,14 @@ function renderSettlement() {
   settlements.forEach((s) => {
     const item = create('div', { className: 'settlement-item' });
     item.innerHTML = `
-      <div class="avatar" style="background: ${colorFor(s.from)}; width: 34px; height: 34px; font-size: 13px">${escapeHtml(initials(s.from))}</div>
+      <div class="avatar" style="background: ${colorFor(s.from)}; width: 36px; height: 36px; font-size: 13px">${escapeHtml(initials(s.from))}</div>
       <div class="settlement-from">${escapeHtml(s.from)}</div>
       <div class="settlement-arrow">→</div>
       <div class="settlement-to">
         ${escapeHtml(s.to)}
         <span class="settlement-amount">${baseCurrency} ${fmtNum(s.amount)}</span>
       </div>
-      <div class="avatar" style="background: ${colorFor(s.to)}; width: 34px; height: 34px; font-size: 13px">${escapeHtml(initials(s.to))}</div>
+      <div class="avatar" style="background: ${colorFor(s.to)}; width: 36px; height: 36px; font-size: 13px">${escapeHtml(initials(s.to))}</div>
     `;
     settleContainer.appendChild(item);
   });
@@ -540,7 +598,6 @@ function showTripDetailView() {
   $('back-btn').classList.remove('hidden');
   $('header-action').classList.remove('hidden');
   $('page-title').textContent = state.currentTrip?.name || '旅程';
-  $('fab').classList.remove('hidden');
   switchTab('expenses');
 }
 
@@ -548,8 +605,8 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach((c) => c.classList.add('hidden'));
   $('tab-' + tab).classList.remove('hidden');
-  if (tab === 'members' || tab === 'expenses') $('fab').classList.remove('hidden');
-  else $('fab').classList.add('hidden');
+  if (tab === 'settle') $('fab').classList.add('hidden');
+  else $('fab').classList.remove('hidden');
 }
 
 // ===== Modals =====
@@ -572,7 +629,7 @@ function openTripModal(trip = null) {
   $('trip-name-input').value = trip?.name || '';
   $('trip-currency-input').value = trip?.baseCurrency || 'TWD';
   $('trip-members-input').value = '';
-  $('trip-members-input').parentElement.style.display = trip ? 'none' : '';
+  $('trip-members-group').style.display = trip ? 'none' : '';
   $('trip-form').dataset.editId = trip?.id || '';
   openModal('trip-modal');
   setTimeout(() => $('trip-name-input').focus(), 100);
@@ -589,6 +646,7 @@ async function handleTripSubmit(e) {
     if (id) {
       await tripDoc(id).update({ name, baseCurrency });
       toast('已更新');
+      closeModal('trip-modal');
     } else {
       const docRef = await tripsCol().add({
         name,
@@ -600,15 +658,19 @@ async function handleTripSubmit(e) {
         memberCount: 0,
       });
       const lines = $('trip-members-input').value.split('\n').map((l) => l.trim()).filter(Boolean);
-      const batch = db.batch();
-      lines.forEach((nm) => {
-        const mref = membersCol(docRef.id).doc();
-        batch.set(mref, { name: nm, createdAt: FieldValue.serverTimestamp() });
-      });
-      await batch.commit();
-      toast('已建立旅程', 'success');
+      if (lines.length > 0) {
+        const batch = db.batch();
+        lines.forEach((nm) => {
+          const mref = membersCol(docRef.id).doc();
+          batch.set(mref, { name: nm, createdAt: FieldValue.serverTimestamp() });
+        });
+        await batch.commit();
+      }
+      toast('旅程已建立 ✈️', 'success');
+      closeModal('trip-modal');
+      // Auto-open the newly created trip so the user can immediately add members/expenses
+      openTrip(docRef.id);
     }
-    closeModal('trip-modal');
   } catch (err) {
     console.error(err);
     toast('儲存失敗：' + err.message, 'error');
@@ -617,7 +679,7 @@ async function handleTripSubmit(e) {
 
 // ===== Member modal =====
 function openMemberModal(member = null) {
-  $('member-modal-title').textContent = member ? '編輯成員' : '新增成員';
+  $('member-modal-title').textContent = member ? '編輯旅伴' : '新增旅伴';
   $('member-name-input').value = member?.name || '';
   $('member-form').dataset.editId = member?.id || '';
   $('delete-member-btn').classList.toggle('hidden', !member);
@@ -650,9 +712,9 @@ async function handleMemberDelete() {
     e.payerId === id || (e.splits || []).some((sp) => sp.memberId === id)
   );
   if (usedIn.length > 0) {
-    if (!confirm(`這位成員已參與 ${usedIn.length} 筆支出。確定要移除嗎？相關支出仍會保留但無法計算。`)) return;
+    if (!confirm(`這位旅伴已參與 ${usedIn.length} 筆支出。確定要移除嗎？`)) return;
   } else {
-    if (!confirm('確定要移除這位成員？')) return;
+    if (!confirm('確定要移除這位旅伴？')) return;
   }
   try {
     await memberDoc(state.currentTripId, id).delete();
@@ -666,7 +728,8 @@ async function handleMemberDelete() {
 // ===== Expense modal =====
 function openExpenseModal(expense = null) {
   if (state.members.length === 0) {
-    toast('請先新增成員', 'error');
+    toast('請先新增旅伴', 'error');
+    switchTab('members');
     return;
   }
   state.editingExpenseId = expense?.id || null;
@@ -715,9 +778,12 @@ function renderPayerChips(selectedId) {
   state.members.forEach((m) => {
     const chip = create('div', {
       className: 'chip' + (m.id === selectedId ? ' active' : ''),
-      text: m.name,
       attrs: { 'data-id': m.id },
     });
+    chip.innerHTML = `
+      <span class="chip-avatar" style="background: ${colorFor(m.name)}">${escapeHtml(initials(m.name))}</span>
+      ${escapeHtml(m.name)}
+    `;
     chip.addEventListener('click', () => {
       document.querySelectorAll('#payer-chips .chip').forEach((c2) => c2.classList.remove('active'));
       chip.classList.add('active');
@@ -746,7 +812,7 @@ function renderSplitList() {
       <div class="avatar" style="background: ${colorFor(member.name)}; width: 30px; height: 30px; font-size: 12px">${escapeHtml(initials(member.name))}</div>
       <div class="split-name">${escapeHtml(member.name)}</div>
       ${state.splitMode !== 'equal' ? `
-        <input type="number" class="split-input" step="0.01" min="0" value="${sp.included ? sp.value : ''}" data-id="${sp.memberId}" />
+        <input type="number" class="split-input" step="0.01" min="0" value="${sp.included ? sp.value : ''}" data-id="${sp.memberId}" inputmode="decimal" />
         <span class="split-input-suffix">${splitSuffix()}</span>
       ` : ''}
     `;
@@ -893,7 +959,7 @@ async function handleExpenseSubmit(e) {
 
   const rate = currency === state.currentTrip.baseCurrency ? 1 : (state.rates[currency] || 0);
   if (rate <= 0) {
-    toast(`尚未設定 ${currency} 的匯率，請先到「設定匯率」`, 'error');
+    toast(`尚未設定 ${currency} 的匯率，請先到右上角選單 → 設定匯率`, 'error');
     return;
   }
 
@@ -928,7 +994,7 @@ async function handleExpenseSubmit(e) {
       await expensesCol(state.currentTripId).add(data);
     }
     closeModal('expense-modal');
-    toast('已儲存', 'success');
+    toast('已儲存 💰', 'success');
   } catch (err) {
     console.error(err);
     toast('儲存失敗：' + err.message, 'error');
@@ -949,7 +1015,7 @@ async function handleExpenseDelete() {
 
 // ===== Rates modal =====
 function openRatesModal() {
-  $('rates-base').textContent = `主要幣別：${state.currentTrip.baseCurrency}（1 ${state.currentTrip.baseCurrency} = 1）`;
+  $('rates-base').textContent = `主要結算幣別：${state.currentTrip.baseCurrency}（1 ${state.currentTrip.baseCurrency} = 1）`;
   renderRatesList();
   openModal('rates-modal');
 }
@@ -961,9 +1027,9 @@ function renderRatesList() {
     const row = create('div', { className: 'rate-row' });
     const rate = state.rates[cur.code] || '';
     row.innerHTML = `
-      <span class="currency-label">${cur.code}</span>
+      <span class="currency-label">${cur.flag} ${cur.code}</span>
       <span class="currency-name">${cur.name}</span>
-      <input type="number" step="0.000001" min="0" value="${rate}" data-cur="${cur.code}" placeholder="0" />
+      <input type="number" step="0.000001" min="0" value="${rate}" data-cur="${cur.code}" placeholder="0" inputmode="decimal" />
     `;
     c.appendChild(row);
   });
@@ -1000,7 +1066,7 @@ async function fetchRates() {
         inp.value = (1 / data.rates[cur]).toFixed(6);
       }
     });
-    toast('已自動填入匯率', 'success');
+    toast('已自動填入最新匯率', 'success');
   } catch (err) {
     console.error(err);
     toast('自動取得失敗，請手動輸入：' + err.message, 'error');
@@ -1017,12 +1083,14 @@ function updateRateDisplay() {
   const rate = state.rates[cur];
   if (!rate || rate <= 0) {
     display.classList.remove('hidden');
-    display.innerHTML = `⚠️ 尚未設定 ${cur} 匯率，請先設定`;
+    display.className = 'rate-display warning';
+    display.innerHTML = `⚠️ 尚未設定 ${cur} 匯率，請點右上角選單 → 設定匯率`;
   } else {
     const amt = parseFloat($('exp-amount').value) || 0;
     const baseAmt = amt * rate;
     display.classList.remove('hidden');
-    display.innerHTML = `1 ${cur} = ${fmtNum(rate, 6)} ${state.currentTrip.baseCurrency}${amt > 0 ? ` · 約 ${state.currentTrip.baseCurrency} ${fmtNum(baseAmt)}` : ''}`;
+    display.className = 'rate-display';
+    display.innerHTML = `💱 1 ${cur} = ${fmtNum(rate, 6)} ${state.currentTrip.baseCurrency}${amt > 0 ? ` · 約 ${state.currentTrip.baseCurrency} ${fmtNum(baseAmt)}` : ''}`;
   }
 }
 
@@ -1047,7 +1115,7 @@ function escapeHtml(s) {
 function populateCurrencySelect(select) {
   select.innerHTML = '';
   CURRENCIES.forEach((c) => {
-    const opt = create('option', { text: `${c.code} ${c.name}`, attrs: { value: c.code } });
+    const opt = create('option', { text: `${c.flag} ${c.code} ${c.name}`, attrs: { value: c.code } });
     select.appendChild(opt);
   });
 }
@@ -1055,7 +1123,7 @@ function populateCurrencySelect(select) {
 // ===== Trip delete / export =====
 async function deleteTrip() {
   if (!state.currentTripId) return;
-  if (!confirm(`確定要刪除「${state.currentTrip.name}」？所有支出與成員都會被刪除。`)) return;
+  if (!confirm(`確定要刪除「${state.currentTrip.name}」？所有支出與成員都會被刪除，無法復原。`)) return;
   try {
     const [memSnap, expSnap] = await Promise.all([
       membersCol(state.currentTripId).get(),
@@ -1105,12 +1173,30 @@ function bindEvents() {
   });
 
   $('fab').addEventListener('click', () => {
-    if (state.view === 'trips') openTripModal();
-    else {
-      const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
-      if (activeTab === 'members') openMemberModal();
-      else openExpenseModal();
+    if (state.view === 'trips') {
+      openTripModal();
+      return;
     }
+    // Trip detail view
+    const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+    if (activeTab === 'members') {
+      openMemberModal();
+    } else {
+      // Expenses tab — if no members, take user to add member first
+      if (state.members.length === 0) {
+        switchTab('members');
+        openMemberModal();
+        toast('請先新增旅伴', 'error');
+      } else {
+        openExpenseModal();
+      }
+    }
+  });
+
+  $('empty-create-trip').addEventListener('click', () => openTripModal());
+  $('expenses-empty-action').addEventListener('click', () => {
+    switchTab('members');
+    openMemberModal();
   });
 
   document.querySelectorAll('.tab-btn').forEach((b) => {
