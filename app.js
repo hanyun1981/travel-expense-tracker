@@ -239,20 +239,116 @@ function startAuth() {
 }
 
 // ===== Firestore paths =====
-function tripsCol() { return db.collection('users').doc(state.user.uid).collection('trips'); }
+// New shared paths: trips/{tripId}/...
+function tripsCol() { return db.collection('trips'); }
 function tripDoc(id) { return tripsCol().doc(id); }
 function membersCol(tripId) { return tripDoc(tripId).collection('members'); }
 function memberDoc(tripId, mid) { return membersCol(tripId).doc(mid); }
 function expensesCol(tripId) { return tripDoc(tripId).collection('expenses'); }
 function expenseDoc(tripId, eid) { return expensesCol(tripId).doc(eid); }
+// Old per-user paths (only used for one-time migration)
+function oldTripsCol() { return db.collection('users').doc(state.user.uid).collection('trips'); }
 
 // ===== Bootstrap =====
 async function bootstrap() {
-  $('loading').classList.add('hidden');
   populateCurrencySelect($('trip-currency-input'));
   populateCurrencySelect($('exp-currency'));
+  // Migrate old data once (silent if nothing to do)
+  await migrateOldData();
   await loadTrips();
+  // Auto-join if URL has ?trip=ID
+  await handleJoinFromUrl();
+  $('loading').classList.add('hidden');
   showTripsView();
+}
+
+// ===== Migration: 把舊的個人資料搬到新的共享格式 =====
+async function migrateOldData() {
+  try {
+    const old = await oldTripsCol().get();
+    if (old.empty) return;
+    let count = 0;
+    for (const oldDoc of old.docs) {
+      const data = oldDoc.data();
+      if (data._migratedTo) continue; // already migrated
+      const newRef = await tripsCol().add({
+        name: data.name || '未命名旅程',
+        baseCurrency: data.baseCurrency || 'TWD',
+        rates: data.rates || { [data.baseCurrency || 'TWD']: 1 },
+        ownerUid: state.user.uid,
+        ownerName: state.user.displayName || state.user.email || '使用者',
+        memberUids: [state.user.uid],
+        createdAt: data.createdAt || FieldValue.serverTimestamp(),
+        totalAmount: data.totalAmount || 0,
+        expenseCount: data.expenseCount || 0,
+        memberCount: data.memberCount || 0,
+      });
+
+      const memSnap = await oldDoc.ref.collection('members').get();
+      const memberMap = {};
+      for (const m of memSnap.docs) {
+        const newM = await membersCol(newRef.id).add(m.data());
+        memberMap[m.id] = newM.id;
+      }
+
+      const expSnap = await oldDoc.ref.collection('expenses').get();
+      for (const e of expSnap.docs) {
+        const ed = e.data();
+        const remappedSplits = (ed.splits || []).map((s) => ({
+          ...s,
+          memberId: memberMap[s.memberId] || s.memberId,
+        }));
+        await expensesCol(newRef.id).add({
+          ...ed,
+          payerId: memberMap[ed.payerId] || ed.payerId,
+          splits: remappedSplits,
+        });
+      }
+
+      await oldDoc.ref.update({ _migratedTo: newRef.id });
+      count++;
+    }
+    if (count > 0) toast(`已將 ${count} 個舊旅程轉為可共享 ✓`, 'success');
+  } catch (err) {
+    console.error('Migration error:', err);
+    // Silent failure — user might just be new
+  }
+}
+
+// ===== Join trip via URL ?trip=ID =====
+async function handleJoinFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const tripId = params.get('trip');
+  if (!tripId) return;
+  history.replaceState({}, '', location.pathname);
+  try {
+    await tripDoc(tripId).update({
+      memberUids: firebase.firestore.FieldValue.arrayUnion(state.user.uid),
+    });
+    toast('已加入旅程 🎉', 'success');
+    setTimeout(() => openTrip(tripId), 600);
+  } catch (err) {
+    console.error('Join error:', err);
+    toast('加入失敗：' + (err.message || '請確認連結正確'), 'error');
+  }
+}
+
+async function joinTripById(input) {
+  // Accept full URL or raw ID
+  let tripId = input.trim();
+  const m = tripId.match(/[?&]trip=([^&]+)/);
+  if (m) tripId = decodeURIComponent(m[1]);
+  if (!tripId) { toast('請輸入旅程 ID 或連結', 'error'); return; }
+  try {
+    await tripDoc(tripId).update({
+      memberUids: firebase.firestore.FieldValue.arrayUnion(state.user.uid),
+    });
+    closeAllModals();
+    toast('已加入旅程 🎉', 'success');
+    setTimeout(() => openTrip(tripId), 600);
+  } catch (err) {
+    toast('加入失敗：' + (err.message || '請確認連結正確'), 'error');
+  }
 }
 
 function clearSubs() {
@@ -261,13 +357,21 @@ function clearSubs() {
 }
 
 async function loadTrips() {
-  const unsub = tripsCol().orderBy('createdAt', 'desc').onSnapshot((snap) => {
-    state.trips = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    if (state.view === 'trips') renderTripsList();
-  }, (err) => {
-    console.error(err);
-    toast('讀取失敗：' + err.message, 'error');
-  });
+  const unsub = tripsCol()
+    .where('memberUids', 'array-contains', state.user.uid)
+    .onSnapshot((snap) => {
+      state.trips = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // Sort client-side (createdAt may be null briefly during write)
+      state.trips.sort((a, b) => {
+        const ta = a.createdAt?.toMillis?.() || 0;
+        const tb = b.createdAt?.toMillis?.() || 0;
+        return tb - ta;
+      });
+      if (state.view === 'trips') renderTripsList();
+    }, (err) => {
+      console.error(err);
+      toast('讀取失敗：' + err.message, 'error');
+    });
   state.unsubscribers.push(unsub);
 }
 
@@ -652,6 +756,9 @@ async function handleTripSubmit(e) {
         name,
         baseCurrency,
         rates: { [baseCurrency]: 1 },
+        ownerUid: state.user.uid,
+        ownerName: state.user.displayName || state.user.email || '使用者',
+        memberUids: [state.user.uid],
         createdAt: FieldValue.serverTimestamp(),
         totalAmount: 0,
         expenseCount: 0,
@@ -1141,6 +1248,58 @@ async function deleteTrip() {
   }
 }
 
+// ===== Share trip =====
+function openShareModal() {
+  if (!state.currentTrip) return;
+  const url = `${location.origin}${location.pathname}?trip=${state.currentTripId}`;
+  $('share-link-input').value = url;
+
+  // Show shared user list
+  const list = $('share-members-list');
+  list.innerHTML = '';
+  const memberUids = state.currentTrip.memberUids || [];
+  memberUids.forEach((uid) => {
+    const isOwner = uid === state.currentTrip.ownerUid;
+    const isMe = uid === state.user.uid;
+    const label = isOwner
+      ? (isMe ? `你（${state.user.email || ''}）` : (state.currentTrip.ownerName || '建立者'))
+      : (isMe ? `你（${state.user.email || ''}）` : `成員 ${uid.slice(0, 6)}…`);
+    const row = create('div', { className: 'share-member-row' });
+    row.innerHTML = `
+      <span>👤</span>
+      <span>${escapeHtml(label)}</span>
+      ${isOwner ? '<span class="badge-owner">建立者</span>' : ''}
+    `;
+    list.appendChild(row);
+  });
+  openModal('share-modal');
+}
+
+async function copyShareLink() {
+  const input = $('share-link-input');
+  input.select();
+  try {
+    await navigator.clipboard.writeText(input.value);
+    toast('連結已複製 📋', 'success');
+  } catch (e) {
+    document.execCommand('copy');
+    toast('連結已複製', 'success');
+  }
+}
+
+function openJoinModal() {
+  $('join-input').value = '';
+  openModal('join-modal');
+  setTimeout(() => $('join-input').focus(), 100);
+}
+
+async function handleJoinSubmit(e) {
+  e.preventDefault();
+  const val = $('join-input').value.trim();
+  if (!val) return;
+  await joinTripById(val);
+}
+
 function exportTrip() {
   if (!state.currentTrip) return;
   const data = {
@@ -1211,10 +1370,15 @@ function bindEvents() {
   $('delete-expense-btn').addEventListener('click', handleExpenseDelete);
   $('delete-member-btn').addEventListener('click', handleMemberDelete);
 
+  $('action-share-trip').addEventListener('click', () => { closeAllModals(); openShareModal(); });
   $('action-edit-trip').addEventListener('click', () => { closeAllModals(); openTripModal(state.currentTrip); });
   $('action-rates').addEventListener('click', () => { closeAllModals(); openRatesModal(); });
   $('action-export').addEventListener('click', () => { closeAllModals(); exportTrip(); });
   $('action-delete-trip').addEventListener('click', () => { closeAllModals(); deleteTrip(); });
+
+  $('copy-link-btn').addEventListener('click', copyShareLink);
+  $('join-trip-btn').addEventListener('click', openJoinModal);
+  $('join-form').addEventListener('submit', handleJoinSubmit);
 
   $('save-rates-btn').addEventListener('click', saveRates);
   $('fetch-rates-btn').addEventListener('click', fetchRates);

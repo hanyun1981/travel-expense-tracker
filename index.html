@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>旅遊記帳 · Travel Split</title>
-  <link rel="stylesheet" href="styles.css?v=4" />
+  <link rel="stylesheet" href="styles.css?v=6" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -65,7 +65,10 @@
 
         <div class="section-title">
           <span class="section-title-icon">🧳</span>
-          <span>所有旅程</span>
+          <span style="flex:1">所有旅程</span>
+          <button id="join-trip-btn" class="btn btn-secondary" style="padding:7px 14px;font-size:13px">
+            🔗 加入旅程
+          </button>
         </div>
 
         <div id="trips-list" class="trips-grid"></div>
@@ -276,6 +279,7 @@
     <!-- Modal: Action sheet -->
     <div id="action-sheet" class="modal hidden">
       <div class="action-sheet-content">
+        <button id="action-share-trip" class="action-item">🔗 分享旅程連結</button>
         <button id="action-edit-trip" class="action-item">編輯旅程</button>
         <button id="action-rates" class="action-item">設定匯率</button>
         <button id="action-export" class="action-item">匯出資料</button>
@@ -284,15 +288,67 @@
       </div>
     </div>
 
+    <!-- Modal: Share trip -->
+    <div id="share-modal" class="modal hidden">
+      <div class="modal-content modal-small">
+        <div class="modal-header">
+          <h3>🔗 分享旅程</h3>
+          <button class="icon-btn close-modal" aria-label="關閉">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="form-hint">把連結傳給朋友。他們用任何 Google 帳號開啟這個連結，就會自動加入這趟旅程，雙方共同編輯與看到所有支出。</p>
+          <div class="share-link-box">
+            <input type="text" id="share-link-input" readonly />
+            <button type="button" id="copy-link-btn" class="btn btn-primary">複製</button>
+          </div>
+          <div class="share-members-info">
+            <div class="share-members-label">目前共享成員：</div>
+            <div id="share-members-list" class="share-members-list"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-text close-modal">關閉</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Join trip -->
+    <div id="join-modal" class="modal hidden">
+      <div class="modal-content modal-small">
+        <div class="modal-header">
+          <h3>🔗 加入旅程</h3>
+          <button class="icon-btn close-modal" aria-label="關閉">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <form id="join-form" class="modal-body">
+          <p class="form-hint">貼上朋友傳給你的旅程連結（或只貼旅程 ID）：</p>
+          <div class="form-group">
+            <input type="text" id="join-input" required placeholder="https://... 或 旅程 ID" />
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-text close-modal">取消</button>
+            <button type="submit" class="btn btn-primary">加入</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Modal: User menu -->
     <div id="user-menu" class="modal hidden">
       <div class="action-sheet-content">
         <div class="user-info">
           <img id="user-info-avatar" src="" alt="" />
-          <div>
+          <div style="min-width:0;flex:1">
             <div id="user-info-name" class="user-info-name"></div>
             <div id="user-info-email" class="user-info-email"></div>
           </div>
+        </div>
+        <div class="sync-hint">
+          ☁️ 資料儲存於此 Google 帳號<br/>
+          <small>在其他裝置登入相同帳號即可同步</small>
         </div>
         <button id="action-logout" class="action-item danger">登出</button>
         <button class="action-item cancel close-modal">取消</button>
@@ -329,6 +385,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
