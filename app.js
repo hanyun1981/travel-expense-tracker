@@ -358,7 +358,6 @@ function clearSubs() {
 
 async function loadTrips() {
   const unsub = tripsCol()
-    .where('memberUids', 'array-contains', state.user.uid)
     .onSnapshot((snap) => {
       state.trips = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       // Sort client-side (createdAt may be null briefly during write)
@@ -373,6 +372,15 @@ async function loadTrips() {
       toast('讀取失敗：' + err.message, 'error');
     });
   state.unsubscribers.push(unsub);
+}
+
+function userCanEditCurrentTrip() {
+  return Boolean(state.user && state.currentTrip);
+}
+
+function userCanDeleteCurrentTrip() {
+  if (!state.user || !state.currentTrip) return false;
+  return state.currentTrip.ownerUid === state.user.uid;
 }
 
 // ===== Render: trips list =====
@@ -467,6 +475,7 @@ async function openTrip(tripId) {
 
 async function updateTripStats() {
   if (!state.currentTrip) return;
+  if (!userCanEditCurrentTrip()) return;
   const total = state.expenses.reduce((s, e) => s + (e.baseAmount || 0), 0);
   const count = state.expenses.length;
   const memberCount = state.members.length;
@@ -502,16 +511,22 @@ function renderTripDetail() {
   renderExpensesList();
   renderMembersList();
   renderSettlement();
+  updateActionAvailability();
 }
 
 function renderExpensesList() {
   const container = $('expenses-list');
   container.innerHTML = '';
   const empty = $('expenses-empty');
+  const canEdit = userCanEditCurrentTrip();
 
   if (state.expenses.length === 0) {
     empty.classList.remove('hidden');
-    if (state.members.length === 0) {
+    if (!canEdit) {
+      $('expenses-empty-title').textContent = '還沒有支出';
+      $('expenses-empty-text').textContent = '這趟旅程目前沒有支出紀錄';
+      $('expenses-empty-action').classList.add('hidden');
+    } else if (state.members.length === 0) {
       $('expenses-empty-title').textContent = '先邀請旅伴吧';
       $('expenses-empty-text').textContent = '加入夥伴後，就能開始記錄支出';
       $('expenses-empty-action').classList.remove('hidden');
@@ -531,7 +546,7 @@ function renderExpensesList() {
       container.appendChild(create('div', { className: 'date-divider', text: formatDate(exp.date) }));
     }
     const item = create('div', { className: 'expense-item' });
-    item.addEventListener('click', () => openExpenseModal(exp));
+    if (canEdit) item.addEventListener('click', () => openExpenseModal(exp));
     const payerName = state.members.find((m) => m.id === exp.payerId)?.name || '?';
     const splitCount = (exp.splits || []).length;
 
@@ -556,6 +571,8 @@ function renderMembersList() {
   const container = $('members-list');
   container.innerHTML = '';
   const empty = $('members-empty');
+  const canEdit = userCanEditCurrentTrip();
+  $('add-member-btn').classList.toggle('hidden', !canEdit);
   if (state.members.length === 0) {
     empty.classList.remove('hidden');
     return;
@@ -571,7 +588,7 @@ function renderMembersList() {
     }, 0);
 
     const item = create('div', { className: 'member-item' });
-    item.addEventListener('click', () => openMemberModal(m));
+    if (canEdit) item.addEventListener('click', () => openMemberModal(m));
     item.innerHTML = `
       <div class="avatar" style="background: ${colorFor(m.name)}">${escapeHtml(initials(m.name))}</div>
       <div style="flex:1">
@@ -702,6 +719,7 @@ function showTripDetailView() {
   $('back-btn').classList.remove('hidden');
   $('header-action').classList.remove('hidden');
   $('page-title').textContent = state.currentTrip?.name || '旅程';
+  updateActionAvailability();
   switchTab('expenses');
 }
 
@@ -709,8 +727,15 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach((c) => c.classList.add('hidden'));
   $('tab-' + tab).classList.remove('hidden');
-  if (tab === 'settle') $('fab').classList.add('hidden');
+  if (tab === 'settle' || !userCanEditCurrentTrip()) $('fab').classList.add('hidden');
   else $('fab').classList.remove('hidden');
+}
+
+function updateActionAvailability() {
+  const canEdit = userCanEditCurrentTrip();
+  $('action-edit-trip').classList.toggle('hidden', !canEdit);
+  $('action-rates').classList.toggle('hidden', !canEdit);
+  $('action-delete-trip').classList.toggle('hidden', !userCanDeleteCurrentTrip());
 }
 
 // ===== Modals =====
