@@ -43,6 +43,45 @@ const CATEGORY_ICONS = {
 
 const TRIP_EMOJIS = ['🏝️', '🗼', '🗽', '🏯', '🏔️', '🌋', '🌴', '🚆', '⛩️', '🎡', '🏖️', '🌅'];
 
+// 精選封面照片（Unsplash 公開 CDN，可自由嵌入）
+const COVER_PRESETS = [
+  { label: '雪山湖泊（北海道/富士）', keywords: ['北海道','hokkaido','富士','fuji','雪','snow','日本','japan'],
+    url: 'https://images.unsplash.com/photo-1490806843957-31f4c9a91c65?w=1200&q=80&auto=format&fit=crop' },
+  { label: '日本紅葉古寺（京都）', keywords: ['京都','kyoto','古都','寺廟'],
+    url: 'https://images.unsplash.com/photo-1545569341-9eb8b30979d9?w=1200&q=80&auto=format&fit=crop' },
+  { label: '東京夜景', keywords: ['東京','tokyo'],
+    url: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=1200&q=80&auto=format&fit=crop' },
+  { label: '熱帶海島（沖繩/峇里）', keywords: ['沖繩','okinawa','峇里','bali','海島','beach','海邊'],
+    url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80&auto=format&fit=crop' },
+  { label: '泰國寺廟（曼谷/清邁）', keywords: ['泰國','thailand','曼谷','bangkok','清邁','chiangmai'],
+    url: 'https://images.unsplash.com/photo-1563492065599-3520f775eeed?w=1200&q=80&auto=format&fit=crop' },
+  { label: '韓國首爾', keywords: ['韓國','korea','首爾','seoul'],
+    url: 'https://images.unsplash.com/photo-1538485399081-7191377e8241?w=1200&q=80&auto=format&fit=crop' },
+  { label: '巴黎鐵塔', keywords: ['巴黎','paris','法國','france'],
+    url: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=1200&q=80&auto=format&fit=crop' },
+  { label: '紐約曼哈頓', keywords: ['紐約','new york','美國','usa','america'],
+    url: 'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=1200&q=80&auto=format&fit=crop' },
+  { label: '義大利羅馬', keywords: ['義大利','italy','羅馬','rome','威尼斯','venice'],
+    url: 'https://images.unsplash.com/photo-1525874684015-58379d421a52?w=1200&q=80&auto=format&fit=crop' },
+  { label: '雪山健行（瑞士/紐西蘭）', keywords: ['瑞士','switzerland','紐西蘭','new zealand','阿爾卑斯','alps','山'],
+    url: 'https://images.unsplash.com/photo-1551632811-561732d1e306?w=1200&q=80&auto=format&fit=crop' },
+  { label: '熱帶叢林（峇里/越南）', keywords: ['越南','vietnam','叢林','rainforest'],
+    url: 'https://images.unsplash.com/photo-1528127269322-539801943592?w=1200&q=80&auto=format&fit=crop' },
+  { label: '都市夜景', keywords: ['city','都市'],
+    url: 'https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?w=1200&q=80&auto=format&fit=crop' },
+];
+
+function autoCoverFor(tripName) {
+  if (!tripName) return null;
+  const lower = tripName.toLowerCase();
+  for (const p of COVER_PRESETS) {
+    if (p.keywords.some((k) => lower.includes(k.toLowerCase()))) {
+      return p.url;
+    }
+  }
+  return null;
+}
+
 const AVATAR_COLORS = [
   '#f97316', '#06b6d4', '#10b981', '#8b5cf6',
   '#ec4899', '#f59e0b', '#3b82f6', '#ef4444',
@@ -415,9 +454,11 @@ function renderTripsList() {
     const expenseCount = (trip.expenseCount ?? 0);
     const totalAmount = (trip.totalAmount ?? 0);
     const emoji = tripEmoji(trip.name || '');
+    const cover = trip.coverImageUrl || autoCoverFor(trip.name);
 
     card.innerHTML = `
-      <div class="trip-card-banner">
+      <div class="trip-card-banner ${cover ? 'has-cover' : ''}">
+        ${cover ? `<img class="trip-card-banner-img" src="${escapeHtml(cover)}" alt="" loading="lazy" />` : ''}
         <div class="trip-card-emoji">${emoji}</div>
       </div>
       <div class="trip-card-body">
@@ -499,6 +540,25 @@ function renderTripDetail() {
   const hero = $('trip-detail-hero');
   hero.style.setProperty('--theme-from', from);
   hero.style.setProperty('--theme-to', to);
+
+  // Cover photo support
+  const cover = state.currentTrip.coverImageUrl || autoCoverFor(state.currentTrip.name);
+  const existingImg = hero.querySelector('.trip-detail-hero-img');
+  if (cover) {
+    hero.classList.add('has-cover');
+    if (existingImg) existingImg.src = cover;
+    else {
+      const img = document.createElement('img');
+      img.className = 'trip-detail-hero-img';
+      img.src = cover;
+      img.alt = '';
+      img.loading = 'lazy';
+      hero.insertBefore(img, hero.firstChild);
+    }
+  } else {
+    hero.classList.remove('has-cover');
+    if (existingImg) existingImg.remove();
+  }
 
   $('trip-detail-emoji').textContent = tripEmoji(state.currentTrip.name || '');
   $('trip-name').textContent = state.currentTrip.name;
@@ -1430,6 +1490,69 @@ async function handleReceiptFile(file) {
   }
 }
 
+// ===== Cover photo picker =====
+let coverDraft = null;
+
+function openCoverModal() {
+  if (!state.currentTrip) return;
+  coverDraft = state.currentTrip.coverImageUrl || null;
+  const grid = $('cover-grid');
+  grid.innerHTML = '';
+  COVER_PRESETS.forEach((p) => {
+    const item = create('div', {
+      className: 'cover-item' + (coverDraft === p.url ? ' active' : ''),
+    });
+    item.innerHTML = `
+      <img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.label)}" loading="lazy" />
+      <div class="cover-item-label">${escapeHtml(p.label)}</div>
+    `;
+    item.addEventListener('click', () => {
+      coverDraft = p.url;
+      $('cover-url-input').value = p.url;
+      document.querySelectorAll('.cover-item').forEach((x) => x.classList.remove('active'));
+      item.classList.add('active');
+    });
+    grid.appendChild(item);
+  });
+  $('cover-url-input').value = coverDraft || '';
+  $('cover-url-input').addEventListener('input', onCoverUrlInput);
+  openModal('cover-modal');
+}
+
+function onCoverUrlInput(e) {
+  coverDraft = e.target.value.trim() || null;
+  document.querySelectorAll('.cover-item').forEach((item) => {
+    const url = item.querySelector('img')?.src;
+    item.classList.toggle('active', url === coverDraft);
+  });
+}
+
+async function saveCover() {
+  if (!state.currentTripId) return;
+  try {
+    await tripDoc(state.currentTripId).update({
+      coverImageUrl: coverDraft || firebase.firestore.FieldValue.delete(),
+    });
+    closeModal('cover-modal');
+    toast('封面已更新 🖼️', 'success');
+  } catch (err) {
+    toast('儲存失敗：' + err.message, 'error');
+  }
+}
+
+async function clearCover() {
+  if (!state.currentTripId) return;
+  try {
+    await tripDoc(state.currentTripId).update({
+      coverImageUrl: firebase.firestore.FieldValue.delete(),
+    });
+    closeModal('cover-modal');
+    toast('已移除封面');
+  } catch (err) {
+    toast('移除失敗：' + err.message, 'error');
+  }
+}
+
 // ===== Share trip =====
 function openShareModal() {
   if (!state.currentTrip) return;
@@ -1553,6 +1676,9 @@ function bindEvents() {
   $('delete-member-btn').addEventListener('click', handleMemberDelete);
 
   $('action-share-trip').addEventListener('click', () => { closeAllModals(); openShareModal(); });
+  $('action-cover').addEventListener('click', () => { closeAllModals(); openCoverModal(); });
+  $('save-cover-btn').addEventListener('click', saveCover);
+  $('clear-cover-btn').addEventListener('click', clearCover);
   $('action-edit-trip').addEventListener('click', () => { closeAllModals(); openTripModal(state.currentTrip); });
   $('action-rates').addEventListener('click', () => { closeAllModals(); openRatesModal(); });
   $('action-export').addEventListener('click', () => { closeAllModals(); exportTrip(); });

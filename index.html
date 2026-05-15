@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>旅遊記帳 · Travel Split</title>
-  <link rel="stylesheet" href="styles.css?v=8" />
+  <link rel="stylesheet" href="styles.css?v=10" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -290,6 +290,7 @@
     <div id="action-sheet" class="modal hidden">
       <div class="action-sheet-content">
         <button id="action-share-trip" class="action-item">🔗 分享旅程連結</button>
+        <button id="action-cover" class="action-item">🖼️ 設定封面照片</button>
         <button id="action-edit-trip" class="action-item">編輯旅程</button>
         <button id="action-rates" class="action-item">設定匯率</button>
         <button id="action-ai-key" class="action-item">🤖 AI 辨識設定</button>
@@ -320,6 +321,31 @@
             <button type="button" id="clear-key-btn" class="btn btn-danger hidden">清除</button>
             <button type="button" class="btn btn-text close-modal">取消</button>
             <button type="button" id="save-key-btn" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Cover photo picker -->
+    <div id="cover-modal" class="modal hidden">
+      <div class="modal-content modal-large">
+        <div class="modal-header">
+          <h3>🖼️ 選擇封面照片</h3>
+          <button class="icon-btn close-modal" aria-label="關閉">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="form-hint">挑一張符合旅程主題的封面照，會出現在首頁卡片與旅程詳情頁。</p>
+          <div class="cover-grid" id="cover-grid"></div>
+          <div class="form-group" style="margin-top:18px">
+            <label>或貼上自己的圖片網址</label>
+            <input type="url" id="cover-url-input" placeholder="https://images.unsplash.com/..." />
+          </div>
+          <div class="modal-footer">
+            <button type="button" id="clear-cover-btn" class="btn btn-danger">移除封面</button>
+            <button type="button" class="btn btn-text close-modal">取消</button>
+            <button type="button" id="save-cover-btn" class="btn btn-primary">儲存</button>
           </div>
         </div>
       </div>
@@ -431,6 +457,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
