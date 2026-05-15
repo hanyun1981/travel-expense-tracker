@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>旅遊記帳 · Travel Split</title>
-  <link rel="stylesheet" href="styles.css?v=7" />
+  <link rel="stylesheet" href="styles.css?v=8" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -184,6 +184,16 @@
           </button>
         </div>
         <form id="expense-form" class="modal-body">
+          <button type="button" id="scan-receipt-btn" class="scan-receipt-btn">
+            <span class="scan-icon">📷</span>
+            <div class="scan-text">
+              <div class="scan-title">拍收據自動辨識</div>
+              <div class="scan-subtitle">AI 自動填入金額、項目與日期</div>
+            </div>
+            <span class="scan-arrow">→</span>
+          </button>
+          <input type="file" id="receipt-file" accept="image/*" capture="environment" class="hidden" />
+
           <div class="form-group">
             <label>項目名稱</label>
             <input type="text" id="exp-title" required placeholder="例如：晚餐、計程車、住宿" />
@@ -282,9 +292,45 @@
         <button id="action-share-trip" class="action-item">🔗 分享旅程連結</button>
         <button id="action-edit-trip" class="action-item">編輯旅程</button>
         <button id="action-rates" class="action-item">設定匯率</button>
+        <button id="action-ai-key" class="action-item">🤖 AI 辨識設定</button>
         <button id="action-export" class="action-item">匯出資料</button>
         <button id="action-delete-trip" class="action-item danger">刪除旅程</button>
         <button class="action-item cancel close-modal">取消</button>
+      </div>
+    </div>
+
+    <!-- Modal: AI API key -->
+    <div id="ai-key-modal" class="modal hidden">
+      <div class="modal-content modal-small">
+        <div class="modal-header">
+          <h3>🤖 AI 辨識設定</h3>
+          <button class="icon-btn close-modal" aria-label="關閉">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="form-hint">收據自動辨識使用 Google Gemini API（免費），需要你自己申請一組 API key。<br/>
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" style="color:var(--ocean-dark);font-weight:700">👉 前往 Google AI Studio 申請（30 秒）</a></p>
+          <div class="form-group">
+            <label>Gemini API key</label>
+            <input type="password" id="ai-key-input" placeholder="AIza..." autocomplete="off" />
+            <p class="form-hint">儲存於你的瀏覽器，不會上傳。每位使用者各自設定。</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" id="clear-key-btn" class="btn btn-danger hidden">清除</button>
+            <button type="button" class="btn btn-text close-modal">取消</button>
+            <button type="button" id="save-key-btn" class="btn btn-primary">儲存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI scanning overlay -->
+    <div id="ai-scanning" class="ai-scanning hidden">
+      <div class="ai-scanning-card">
+        <div class="ai-spinner"></div>
+        <h3>🤖 AI 辨識中</h3>
+        <p>正在讀取收據內容...</p>
       </div>
     </div>
 
@@ -385,6 +431,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>

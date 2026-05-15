@@ -1273,6 +1273,163 @@ async function deleteTrip() {
   }
 }
 
+// ===== Receipt OCR (Gemini Vision) =====
+const AI_KEY_STORAGE = 'gemini_api_key';
+
+function getAiKey() {
+  return localStorage.getItem(AI_KEY_STORAGE) || '';
+}
+
+function openAiKeyModal() {
+  const key = getAiKey();
+  $('ai-key-input').value = key;
+  $('clear-key-btn').classList.toggle('hidden', !key);
+  openModal('ai-key-modal');
+}
+
+function saveAiKey() {
+  const key = $('ai-key-input').value.trim();
+  if (!key) { toast('請輸入 API key', 'error'); return; }
+  if (!key.startsWith('AIza')) {
+    if (!confirm('這看起來不像 Gemini API key（通常以 AIza 開頭），仍要儲存嗎？')) return;
+  }
+  localStorage.setItem(AI_KEY_STORAGE, key);
+  toast('已儲存 ✓', 'success');
+  closeModal('ai-key-modal');
+}
+
+function clearAiKey() {
+  localStorage.removeItem(AI_KEY_STORAGE);
+  $('ai-key-input').value = '';
+  $('clear-key-btn').classList.add('hidden');
+  toast('已清除');
+}
+
+function compressImage(file, maxSize = 1280, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > height && width > maxSize) {
+        height = Math.round((height * maxSize) / width);
+        width = maxSize;
+      } else if (height > maxSize) {
+        width = Math.round((width * maxSize) / height);
+        height = maxSize;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      URL.revokeObjectURL(img.src);
+      resolve({
+        base64: dataUrl.split(',')[1],
+        mimeType: 'image/jpeg',
+      });
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function callGeminiVision(base64, mimeType, apiKey) {
+  const tripCurrency = state.currentTrip?.baseCurrency || 'TWD';
+  const today = todayISO();
+  const prompt = `這是一張收據或發票照片。請辨識出主要資訊，並回傳純 JSON（不要 markdown code block，不要其他文字）：
+{
+  "title": "商家或品項簡短名稱（中文，10 字內）",
+  "amount": 總金額數字（不含貨幣符號）,
+  "currency": "ISO 4217 三字母代碼，常見：TWD JPY USD EUR KRW CNY HKD THB GBP SGD MYR VND AUD CAD IDR PHP",
+  "date": "YYYY-MM-DD 格式",
+  "category": "food|transport|lodging|ticket|shopping|general 其中一項",
+  "note": "其他補充（選填，例如店家地址）"
+}
+規則：
+- amount 必須是數字（例如 1234.56），不要加千分位或貨幣符號
+- date 若收據沒寫，回傳 "${today}"
+- currency 從收據幣別判斷；若無法判斷，回傳 "${tripCurrency}"
+- category 按項目分類：餐廳食物=food、交通計程車車票=transport、飯店住宿=lodging、票券門票=ticket、購物商品=shopping、其他=general
+- title 用中文，簡短描述（例如「拉麵店」「7-11」「地鐵車票」）`;
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const body = {
+    contents: [{
+      parts: [
+        { text: prompt },
+        { inline_data: { mime_type: mimeType, data: base64 } }
+      ]
+    }],
+    generationConfig: { response_mime_type: 'application/json', temperature: 0.1 },
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`API 錯誤 ${res.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('AI 沒有回傳結果');
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const m = text.match(/\{[\s\S]*\}/);
+    if (m) return JSON.parse(m[0]);
+    throw new Error('無法解析 AI 回應');
+  }
+}
+
+function applyReceiptData(d) {
+  if (!d) return;
+  if (d.title) $('exp-title').value = d.title;
+  if (d.amount != null) $('exp-amount').value = d.amount;
+  if (d.currency) {
+    const opt = [...$('exp-currency').options].find(o => o.value === d.currency);
+    if (opt) $('exp-currency').value = d.currency;
+  }
+  if (d.date && /^\d{4}-\d{2}-\d{2}$/.test(d.date)) $('exp-date').value = d.date;
+  if (d.category) {
+    document.querySelectorAll('.cat-btn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.cat === d.category);
+    });
+  }
+  if (d.note) {
+    const noteField = $('exp-note');
+    if (!noteField.value) noteField.value = d.note;
+  }
+  updateRateDisplay();
+  updateSplitSummary();
+}
+
+async function handleReceiptFile(file) {
+  if (!file) return;
+  const key = getAiKey();
+  if (!key) {
+    toast('請先設定 Gemini API key', 'error');
+    openAiKeyModal();
+    return;
+  }
+  $('ai-scanning').classList.remove('hidden');
+  try {
+    const { base64, mimeType } = await compressImage(file);
+    const data = await callGeminiVision(base64, mimeType, key);
+    applyReceiptData(data);
+    toast('辨識完成，請確認資料 ✨', 'success');
+  } catch (err) {
+    console.error(err);
+    toast('辨識失敗：' + (err.message || '請再試一次'), 'error');
+  } finally {
+    $('ai-scanning').classList.add('hidden');
+    // Reset file input so same file can be picked again
+    $('receipt-file').value = '';
+  }
+}
+
 // ===== Share trip =====
 function openShareModal() {
   if (!state.currentTrip) return;
@@ -1404,6 +1561,23 @@ function bindEvents() {
   $('copy-link-btn').addEventListener('click', copyShareLink);
   $('join-trip-btn').addEventListener('click', openJoinModal);
   $('join-form').addEventListener('submit', handleJoinSubmit);
+
+  // Receipt OCR
+  $('action-ai-key').addEventListener('click', () => { closeAllModals(); openAiKeyModal(); });
+  $('save-key-btn').addEventListener('click', saveAiKey);
+  $('clear-key-btn').addEventListener('click', clearAiKey);
+  $('scan-receipt-btn').addEventListener('click', () => {
+    if (!getAiKey()) {
+      toast('請先設定 Gemini API key', 'error');
+      openAiKeyModal();
+      return;
+    }
+    $('receipt-file').click();
+  });
+  $('receipt-file').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) handleReceiptFile(file);
+  });
 
   $('save-rates-btn').addEventListener('click', saveRates);
   $('fetch-rates-btn').addEventListener('click', fetchRates);
