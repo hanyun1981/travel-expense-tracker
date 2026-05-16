@@ -144,6 +144,39 @@ function initials(name) {
   return name.trim().slice(0, 2);
 }
 
+// 統一 avatar 渲染 — 有 avatarUrl 顯示圖片，否則顯示首字
+function avatarMarkup(member, size = 38) {
+  const sz = `width:${size}px;height:${size}px;font-size:${Math.max(11, Math.round(size * 0.38))}px`;
+  if (member?.avatarUrl) {
+    return `<div class="avatar" style="${sz}"><img src="${escapeHtml(member.avatarUrl)}" alt="" loading="lazy" /></div>`;
+  }
+  return `<div class="avatar" style="background:${colorFor(member?.name || '')};${sz}">${escapeHtml(initials(member?.name || '?'))}</div>`;
+}
+
+// 壓縮頭像到正方形（中心裁切），儲存為 data URL
+function compressAvatarFile(file, size = 256, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const srcSize = Math.min(img.naturalWidth, img.naturalHeight);
+      const sx = (img.naturalWidth - srcSize) / 2;
+      const sy = (img.naturalHeight - srcSize) / 2;
+      // 白色底（透明 PNG 變白底）
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, size, size);
+      ctx.drawImage(img, sx, sy, srcSize, srcSize, 0, 0, size, size);
+      URL.revokeObjectURL(img.src);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 function tripEmoji(name) {
   if (!name) return '✈️';
   let hash = 0;
@@ -650,7 +683,7 @@ function renderMembersList() {
     const item = create('div', { className: 'member-item' });
     if (canEdit) item.addEventListener('click', () => openMemberModal(m));
     item.innerHTML = `
-      <div class="avatar" style="background: ${colorFor(m.name)}">${escapeHtml(initials(m.name))}</div>
+      ${avatarMarkup(m, 40)}
       <div style="flex:1">
         <div class="member-name">${escapeHtml(m.name)}</div>
         <div class="member-stats">已付 ${fmtNum(paidTotal)} · 應分 ${fmtNum(owedTotal)}</div>
@@ -725,9 +758,10 @@ function renderSettlement() {
     if (b.balance > 0.005) { cls = 'positive'; prefix = '+ '; }
     else if (b.balance < -0.005) { cls = 'negative'; prefix = '- '; }
     const item = create('div', { className: 'balance-item' });
+    const m = state.members.find((x) => x.id === b.id) || { name: b.name };
     item.innerHTML = `
       <div class="balance-name">
-        <div class="avatar" style="background: ${colorFor(b.name)}; width: 34px; height: 34px; font-size: 13px">${escapeHtml(initials(b.name))}</div>
+        ${avatarMarkup(m, 34)}
         ${escapeHtml(b.name)}
       </div>
       <div class="balance-amount ${cls}">${prefix}${baseCurrency} ${fmtNum(Math.abs(b.balance))}</div>
@@ -743,15 +777,17 @@ function renderSettlement() {
   }
   settlements.forEach((s) => {
     const item = create('div', { className: 'settlement-item' });
+    const mFrom = state.members.find((x) => x.id === s.fromId) || { name: s.from };
+    const mTo = state.members.find((x) => x.id === s.toId) || { name: s.to };
     item.innerHTML = `
-      <div class="avatar" style="background: ${colorFor(s.from)}; width: 36px; height: 36px; font-size: 13px">${escapeHtml(initials(s.from))}</div>
+      ${avatarMarkup(mFrom, 36)}
       <div class="settlement-from">${escapeHtml(s.from)}</div>
       <div class="settlement-arrow">→</div>
       <div class="settlement-to">
         ${escapeHtml(s.to)}
         <span class="settlement-amount">${baseCurrency} ${fmtNum(s.amount)}</span>
       </div>
-      <div class="avatar" style="background: ${colorFor(s.to)}; width: 36px; height: 36px; font-size: 13px">${escapeHtml(initials(s.to))}</div>
+      ${avatarMarkup(mTo, 36)}
     `;
     settleContainer.appendChild(item);
   });
@@ -870,13 +906,53 @@ async function handleTripSubmit(e) {
 }
 
 // ===== Member modal =====
+let memberAvatarDraft = null; // base64 data URL OR null OR 'KEEP' (no change)
+
 function openMemberModal(member = null) {
   $('member-modal-title').textContent = member ? '編輯旅伴' : '新增旅伴';
   $('member-name-input').value = member?.name || '';
   $('member-form').dataset.editId = member?.id || '';
   $('delete-member-btn').classList.toggle('hidden', !member);
+
+  memberAvatarDraft = 'KEEP';
+  refreshAvatarPreview(member?.avatarUrl, member?.name || '?');
   openModal('member-modal');
   setTimeout(() => $('member-name-input').focus(), 100);
+}
+
+function refreshAvatarPreview(url, name) {
+  const preview = $('member-avatar-preview');
+  preview.innerHTML = '';
+  preview.removeAttribute('style');
+  if (url) {
+    preview.style.width = '88px';
+    preview.style.height = '88px';
+    preview.innerHTML = `<img src="${escapeHtml(url)}" alt="" />`;
+    $('remove-avatar-btn').classList.remove('hidden');
+  } else {
+    preview.style.cssText = `width:88px;height:88px;font-size:32px;background:${colorFor(name || '?')};`;
+    preview.textContent = initials(name || '?');
+    $('remove-avatar-btn').classList.add('hidden');
+  }
+}
+
+async function handleAvatarFileChange(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) { toast('檔案太大（>10MB）', 'error'); return; }
+  try {
+    const dataUrl = await compressAvatarFile(file);
+    memberAvatarDraft = dataUrl;
+    refreshAvatarPreview(dataUrl, $('member-name-input').value);
+    e.target.value = '';
+  } catch (err) {
+    toast('處理圖片失敗：' + err.message, 'error');
+  }
+}
+
+function handleAvatarRemove() {
+  memberAvatarDraft = null; // 表示要移除
+  refreshAvatarPreview(null, $('member-name-input').value);
 }
 
 async function handleMemberSubmit(e) {
@@ -884,16 +960,28 @@ async function handleMemberSubmit(e) {
   const name = $('member-name-input').value.trim();
   if (!name) return;
   const id = $('member-form').dataset.editId;
+  const payload = { name };
+  if (memberAvatarDraft === null) {
+    payload.avatarUrl = firebase.firestore.FieldValue.delete();
+  } else if (memberAvatarDraft && memberAvatarDraft !== 'KEEP') {
+    payload.avatarUrl = memberAvatarDraft;
+  }
   try {
     if (id) {
-      await memberDoc(state.currentTripId, id).update({ name });
+      await memberDoc(state.currentTripId, id).update(payload);
     } else {
-      await membersCol(state.currentTripId).add({ name, createdAt: FieldValue.serverTimestamp() });
+      const data = { name, createdAt: FieldValue.serverTimestamp() };
+      if (memberAvatarDraft && memberAvatarDraft !== 'KEEP') data.avatarUrl = memberAvatarDraft;
+      await membersCol(state.currentTripId).add(data);
     }
     closeModal('member-modal');
     toast('已儲存');
   } catch (err) {
-    toast('儲存失敗：' + err.message, 'error');
+    if (err.code === 'invalid-argument' && /maximum/.test(err.message || '')) {
+      toast('圖片太大，請選較小的照片', 'error');
+    } else {
+      toast('儲存失敗：' + err.message, 'error');
+    }
   }
 }
 
@@ -972,10 +1060,10 @@ function renderPayerChips(selectedId) {
       className: 'chip' + (m.id === selectedId ? ' active' : ''),
       attrs: { 'data-id': m.id },
     });
-    chip.innerHTML = `
-      <span class="chip-avatar" style="background: ${colorFor(m.name)}">${escapeHtml(initials(m.name))}</span>
-      ${escapeHtml(m.name)}
-    `;
+    const av = m.avatarUrl
+      ? `<span class="chip-avatar chip-avatar-img"><img src="${escapeHtml(m.avatarUrl)}" alt=""/></span>`
+      : `<span class="chip-avatar" style="background: ${colorFor(m.name)}">${escapeHtml(initials(m.name))}</span>`;
+    chip.innerHTML = `${av}${escapeHtml(m.name)}`;
     chip.addEventListener('click', () => {
       document.querySelectorAll('#payer-chips .chip').forEach((c2) => c2.classList.remove('active'));
       chip.classList.add('active');
@@ -1001,7 +1089,7 @@ function renderSplitList() {
     const row = create('div', { className: 'split-row' + (sp.included ? ' included' : '') });
     row.innerHTML = `
       <div class="split-checkbox">${sp.included ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : ''}</div>
-      <div class="avatar" style="background: ${colorFor(member.name)}; width: 30px; height: 30px; font-size: 12px">${escapeHtml(initials(member.name))}</div>
+      ${avatarMarkup(member, 30)}
       <div class="split-name">${escapeHtml(member.name)}</div>
       ${state.splitMode !== 'equal' ? `
         <input type="number" class="split-input" step="0.01" min="0" value="${sp.included ? sp.value : ''}" data-id="${sp.memberId}" inputmode="decimal" />
@@ -1672,6 +1760,18 @@ function bindEvents() {
   $('trip-form').addEventListener('submit', handleTripSubmit);
   $('expense-form').addEventListener('submit', handleExpenseSubmit);
   $('member-form').addEventListener('submit', handleMemberSubmit);
+  $('upload-avatar-btn').addEventListener('click', () => $('member-avatar-file').click());
+  $('member-avatar-file').addEventListener('change', handleAvatarFileChange);
+  $('remove-avatar-btn').addEventListener('click', handleAvatarRemove);
+  $('member-name-input').addEventListener('input', (e) => {
+    // 即時更新預覽（若還沒換頭像）
+    if (memberAvatarDraft === 'KEEP' || memberAvatarDraft === null) {
+      const id = $('member-form').dataset.editId;
+      const existing = id ? state.members.find((x) => x.id === id) : null;
+      const url = memberAvatarDraft === 'KEEP' ? existing?.avatarUrl : null;
+      refreshAvatarPreview(url, e.target.value);
+    }
+  });
   $('delete-expense-btn').addEventListener('click', handleExpenseDelete);
   $('delete-member-btn').addEventListener('click', handleMemberDelete);
 

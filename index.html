@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>旅遊記帳 · Travel Split</title>
-  <link rel="stylesheet" href="styles.css?v=12" />
+  <link rel="stylesheet" href="styles.css?v=13" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -274,6 +274,17 @@
         </div>
         <form id="member-form" class="modal-body">
           <div class="form-group">
+            <label>頭像</label>
+            <div class="avatar-edit">
+              <div id="member-avatar-preview" class="avatar avatar-xlarge">?</div>
+              <div class="avatar-edit-actions">
+                <button type="button" id="upload-avatar-btn" class="btn btn-secondary">📷 上傳照片</button>
+                <button type="button" id="remove-avatar-btn" class="btn btn-text hidden">移除</button>
+                <input type="file" id="member-avatar-file" accept="image/*" class="hidden" />
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
             <label>名稱</label>
             <input type="text" id="member-name-input" required placeholder="旅伴名稱" />
           </div>
@@ -457,6 +468,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>
