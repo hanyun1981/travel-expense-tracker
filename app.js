@@ -1492,14 +1492,19 @@ async function callGeminiVision(base64, mimeType, apiKey) {
   "currency": "ISO 4217 三字母代碼，常見：TWD JPY USD EUR KRW CNY HKD THB GBP SGD MYR VND AUD CAD IDR PHP",
   "date": "YYYY-MM-DD 格式",
   "category": "food|transport|lodging|ticket|shopping|general 其中一項",
-  "note": "其他補充（選填，例如店家地址）"
+  "note": "其他補充（選填，例如店家地址）",
+  "items": [ { "name": "品項名稱（中文，15 字內）", "qty": 數量, "amount": 該品項小計金額 } ]
 }
 規則：
 - amount 必須是數字（例如 1234.56），不要加千分位或貨幣符號
 - date 若收據沒寫，回傳 "${today}"
 - currency 從收據幣別判斷；若無法判斷，回傳 "${tripCurrency}"
 - category 按項目分類：餐廳食物=food、交通計程車車票=transport、飯店住宿=lodging、票券門票=ticket、購物商品=shopping、其他=general
-- title 用中文，簡短描述（例如「拉麵店」「7-11」「地鐵車票」）`;
+- title 用中文，簡短描述（例如「拉麵店」「7-11」「地鐵車票」）
+- items 是收據中明確列出的個別品項（例如：拉麵 280、餃子 80、可樂 50）。
+  - 不要把「小計」「稅金」「服務費」「總計」「找零」等彙總列入。
+  - 數量沒寫的話 qty 用 1。
+  - 若收據沒有逐項列出（例如計程車收據只有總額、或單一項目），items 回傳空陣列 []。`;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
   const body = {
@@ -1566,6 +1571,13 @@ async function handleReceiptFile(file) {
   try {
     const { base64, mimeType } = await compressImage(file);
     const data = await callGeminiVision(base64, mimeType, key);
+    // 若辨識出 2+ 個品項 → 跳出拆分視窗讓使用者選
+    if (Array.isArray(data.items) && data.items.length >= 2) {
+      $('ai-scanning').classList.add('hidden');
+      openScanResultModal(data);
+      return;
+    }
+    // 單筆 → 直接填入支出表單（原本行為）
     applyReceiptData(data);
     toast('辨識完成，請確認資料 ✨', 'success');
   } catch (err) {
@@ -1573,8 +1585,242 @@ async function handleReceiptFile(file) {
     toast('辨識失敗：' + (err.message || '請再試一次'), 'error');
   } finally {
     $('ai-scanning').classList.add('hidden');
-    // Reset file input so same file can be picked again
     $('receipt-file').value = '';
+  }
+}
+
+// ===== 拍照拆分品項 modal =====
+let scanDraft = null; // { currency, date, category, total, items: [{name, qty, amount, checked}], payerId, splitterIds: Set }
+
+function openScanResultModal(data) {
+  const currency = data.currency || state.currentTrip.baseCurrency;
+  const date = (data.date && /^\d{4}-\d{2}-\d{2}$/.test(data.date)) ? data.date : todayISO();
+  scanDraft = {
+    currency,
+    date,
+    category: data.category || 'general',
+    total: data.amount || 0,
+    title: data.title || '',
+    note: data.note || '',
+    items: (data.items || []).map((it) => ({
+      name: String(it.name || '').slice(0, 30),
+      qty: Number(it.qty) || 1,
+      amount: Number(it.amount) || 0,
+      checked: true,
+    })),
+    payerId: state.members[0]?.id || null,
+    splitterIds: new Set(state.members.map((m) => m.id)),
+  };
+
+  // Render summary
+  $('scan-summary').innerHTML = `
+    <div>
+      <div class="scan-summary-info">📅 ${escapeHtml(date)} · 收據總額</div>
+      <div class="scan-summary-total">${escapeHtml(currency)} ${fmtNum(scanDraft.total)}</div>
+    </div>
+    <div class="scan-summary-info">${scanDraft.items.length} 個品項</div>
+  `;
+
+  // Set category
+  document.querySelectorAll('#scan-category-grid .cat-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.cat === scanDraft.category);
+  });
+
+  renderScanItems();
+  renderScanPayerChips();
+  renderScanSplitterChips();
+
+  // Close any other modal first (the expense modal is open behind us)
+  closeModal('expense-modal');
+  openModal('scan-result-modal');
+}
+
+function renderScanItems() {
+  const c = $('scan-items-list');
+  c.innerHTML = '';
+  scanDraft.items.forEach((it, i) => {
+    const row = create('div', { className: 'scan-item' + (it.checked ? ' checked' : '') });
+    row.innerHTML = `
+      <div class="scan-cb">${it.checked ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : ''}</div>
+      <input class="scan-item-name" type="text" value="${escapeHtml(it.name)}" placeholder="品項名稱" />
+      <input class="scan-item-amount" type="number" step="0.01" min="0" value="${it.amount}" inputmode="decimal" />
+      <button type="button" class="scan-item-del" title="刪除">×</button>
+    `;
+    const cb = row.querySelector('.scan-cb');
+    const nameInp = row.querySelector('.scan-item-name');
+    const amtInp = row.querySelector('.scan-item-amount');
+    const del = row.querySelector('.scan-item-del');
+
+    cb.addEventListener('click', () => {
+      it.checked = !it.checked;
+      renderScanItems();
+    });
+    nameInp.addEventListener('input', (e) => { it.name = e.target.value; });
+    amtInp.addEventListener('input', (e) => {
+      it.amount = parseFloat(e.target.value) || 0;
+      updateScanTotal();
+    });
+    del.addEventListener('click', () => {
+      scanDraft.items.splice(i, 1);
+      renderScanItems();
+    });
+    c.appendChild(row);
+  });
+  updateScanTotal();
+}
+
+function updateScanTotal() {
+  const sum = scanDraft.items.filter((i) => i.checked).reduce((s, i) => s + (i.amount || 0), 0);
+  const checked = scanDraft.items.filter((i) => i.checked).length;
+  $('scan-items-total').innerHTML = `
+    <span>勾選 ${checked} 筆，加總</span>
+    <span>${scanDraft.currency} ${fmtNum(sum)}</span>
+  `;
+}
+
+function renderScanPayerChips() {
+  const c = $('scan-payer-chips');
+  c.innerHTML = '';
+  state.members.forEach((m) => {
+    const isActive = m.id === scanDraft.payerId;
+    const chip = create('div', { className: 'chip' + (isActive ? ' active' : '') });
+    const av = m.avatarUrl
+      ? `<span class="chip-avatar chip-avatar-img"><img src="${escapeHtml(m.avatarUrl)}" alt=""/></span>`
+      : `<span class="chip-avatar" style="background: ${colorFor(m.name)}">${escapeHtml(initials(m.name))}</span>`;
+    chip.innerHTML = `${av}${escapeHtml(m.name)}`;
+    chip.addEventListener('click', () => {
+      scanDraft.payerId = m.id;
+      renderScanPayerChips();
+    });
+    c.appendChild(chip);
+  });
+}
+
+function renderScanSplitterChips() {
+  const c = $('scan-splitter-chips');
+  c.innerHTML = '';
+  state.members.forEach((m) => {
+    const isActive = scanDraft.splitterIds.has(m.id);
+    const chip = create('div', { className: 'chip' + (isActive ? ' active' : '') });
+    const av = m.avatarUrl
+      ? `<span class="chip-avatar chip-avatar-img"><img src="${escapeHtml(m.avatarUrl)}" alt=""/></span>`
+      : `<span class="chip-avatar" style="background: ${colorFor(m.name)}">${escapeHtml(initials(m.name))}</span>`;
+    chip.innerHTML = `${av}${escapeHtml(m.name)}`;
+    chip.addEventListener('click', () => {
+      if (scanDraft.splitterIds.has(m.id)) scanDraft.splitterIds.delete(m.id);
+      else scanDraft.splitterIds.add(m.id);
+      renderScanSplitterChips();
+    });
+    c.appendChild(chip);
+  });
+}
+
+function scanToggleAllSplitters() {
+  if (scanDraft.splitterIds.size === state.members.length) {
+    scanDraft.splitterIds.clear();
+  } else {
+    scanDraft.splitterIds = new Set(state.members.map((m) => m.id));
+  }
+  renderScanSplitterChips();
+}
+
+function scanAddItem() {
+  scanDraft.items.push({ name: '', qty: 1, amount: 0, checked: true });
+  renderScanItems();
+  // Focus the new item's name field
+  setTimeout(() => {
+    const rows = document.querySelectorAll('#scan-items-list .scan-item-name');
+    rows[rows.length - 1]?.focus();
+  }, 50);
+}
+
+function computeScanExpenseData(item) {
+  const currency = scanDraft.currency;
+  const rate = currency === state.currentTrip.baseCurrency ? 1 : (state.rates[currency] || 0);
+  if (rate <= 0) return null;
+  const amount = Number(item.amount) || 0;
+  const splitterIds = [...scanDraft.splitterIds];
+  // Equal split with cents-distribution
+  const cents = Math.round(amount * 100);
+  const baseCents = Math.floor(cents / splitterIds.length);
+  let remainder = cents - baseCents * splitterIds.length;
+  const splits = splitterIds.map((mid, idx) => {
+    const c = baseCents + (idx < remainder ? 1 : 0);
+    const amt = c / 100;
+    return {
+      memberId: mid,
+      value: 1,
+      amount: Math.round(amt * 100) / 100,
+      baseAmount: Math.round(amt * rate * 100) / 100,
+    };
+  });
+  return {
+    title: item.name || '收據品項',
+    amount: Math.round(amount * 100) / 100,
+    currency,
+    rate,
+    baseAmount: Math.round(amount * rate * 100) / 100,
+    date: scanDraft.date,
+    note: scanDraft.note || '',
+    category: document.querySelector('#scan-category-grid .cat-btn.active')?.dataset.cat || scanDraft.category,
+    payerId: scanDraft.payerId,
+    splitMode: 'equal',
+    splits,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+}
+
+async function handleScanCreate(mergeAll = false) {
+  if (!scanDraft) return;
+  const checked = scanDraft.items.filter((i) => i.checked && i.amount > 0);
+  if (!mergeAll && checked.length === 0) {
+    toast('請至少勾選一個品項', 'error');
+    return;
+  }
+  if (!scanDraft.payerId) { toast('請選付款人', 'error'); return; }
+  if (scanDraft.splitterIds.size === 0) { toast('請選分攤者', 'error'); return; }
+
+  const currency = scanDraft.currency;
+  const rate = currency === state.currentTrip.baseCurrency ? 1 : (state.rates[currency] || 0);
+  if (rate <= 0) {
+    toast(`尚未設定 ${currency} 匯率，請先到右上選單 → 設定匯率`, 'error');
+    return;
+  }
+
+  try {
+    const batch = db.batch();
+    let count = 0;
+    if (mergeAll) {
+      // Merge to single expense
+      const mergedAmount = checked.length > 0
+        ? checked.reduce((s, i) => s + i.amount, 0)
+        : scanDraft.total;
+      const mergedTitle = scanDraft.title || (checked[0]?.name) || '收據合計';
+      const data = computeScanExpenseData({
+        name: mergedTitle,
+        amount: mergedAmount,
+      });
+      if (!data) { toast('匯率錯誤', 'error'); return; }
+      const ref = expensesCol(state.currentTripId).doc();
+      batch.set(ref, data);
+      count = 1;
+    } else {
+      for (const item of checked) {
+        const data = computeScanExpenseData(item);
+        if (!data) { toast('匯率錯誤', 'error'); return; }
+        const ref = expensesCol(state.currentTripId).doc();
+        batch.set(ref, data);
+        count++;
+      }
+    }
+    await batch.commit();
+    closeModal('scan-result-modal');
+    scanDraft = null;
+    toast(`已建立 ${count} 筆支出 💰`, 'success');
+  } catch (err) {
+    console.error(err);
+    toast('儲存失敗：' + err.message, 'error');
   }
 }
 
@@ -1803,6 +2049,18 @@ function bindEvents() {
   $('receipt-file').addEventListener('change', (e) => {
     const file = e.target.files?.[0];
     if (file) handleReceiptFile(file);
+  });
+
+  // Scan result modal
+  $('scan-create-btn').addEventListener('click', () => handleScanCreate(false));
+  $('scan-merge-btn').addEventListener('click', () => handleScanCreate(true));
+  $('scan-add-item-btn').addEventListener('click', scanAddItem);
+  $('scan-toggle-all-btn').addEventListener('click', scanToggleAllSplitters);
+  document.querySelectorAll('#scan-category-grid .cat-btn').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#scan-category-grid .cat-btn').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+    });
   });
 
   $('save-rates-btn').addEventListener('click', saveRates);

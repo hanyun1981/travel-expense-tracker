@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>旅遊記帳 · Travel Split</title>
-  <link rel="stylesheet" href="styles.css?v=13" />
+  <link rel="stylesheet" href="styles.css?v=15" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -362,6 +362,61 @@
       </div>
     </div>
 
+    <!-- Modal: Scan result (multi-item picker) -->
+    <div id="scan-result-modal" class="modal hidden">
+      <div class="modal-content modal-large">
+        <div class="modal-header">
+          <h3>🧾 收據明細</h3>
+          <button class="icon-btn close-modal" aria-label="關閉">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="scan-summary" id="scan-summary"></div>
+
+          <div class="form-group">
+            <div class="label-row">
+              <label>勾選要建立的品項</label>
+              <button type="button" id="scan-add-item-btn" class="btn btn-text" style="padding:4px 10px;font-size:12px">+ 新增品項</button>
+            </div>
+            <div class="scan-items-list" id="scan-items-list"></div>
+            <div class="scan-items-total" id="scan-items-total"></div>
+          </div>
+
+          <div class="form-group">
+            <label>付款人（套用所有品項）</label>
+            <div id="scan-payer-chips" class="chips-row"></div>
+          </div>
+
+          <div class="form-group">
+            <div class="label-row">
+              <label>分攤者（套用所有品項）</label>
+              <button type="button" id="scan-toggle-all-btn" class="btn btn-text" style="padding:4px 10px;font-size:12px">全選/全消</button>
+            </div>
+            <div id="scan-splitter-chips" class="chips-row"></div>
+          </div>
+
+          <div class="form-group">
+            <label>類別</label>
+            <div class="category-grid" id="scan-category-grid">
+              <button type="button" class="cat-btn active" data-cat="general">📝 一般</button>
+              <button type="button" class="cat-btn" data-cat="food">🍴 餐飲</button>
+              <button type="button" class="cat-btn" data-cat="transport">🚕 交通</button>
+              <button type="button" class="cat-btn" data-cat="lodging">🏨 住宿</button>
+              <button type="button" class="cat-btn" data-cat="ticket">🎫 門票</button>
+              <button type="button" class="cat-btn" data-cat="shopping">🛍️ 購物</button>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" id="scan-merge-btn" class="btn btn-secondary">合併成 1 筆</button>
+            <button type="button" class="btn btn-text close-modal">取消</button>
+            <button type="button" id="scan-create-btn" class="btn btn-primary">建立支出</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- AI scanning overlay -->
     <div id="ai-scanning" class="ai-scanning hidden">
       <div class="ai-scanning-card">
@@ -468,6 +523,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>
