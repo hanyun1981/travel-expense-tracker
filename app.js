@@ -430,6 +430,7 @@ function clearSubs() {
 
 async function loadTrips() {
   const unsub = tripsCol()
+    .where('memberUids', 'array-contains', state.user.uid)
     .onSnapshot((snap) => {
       state.trips = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       // Sort client-side (createdAt may be null briefly during write)
@@ -529,18 +530,34 @@ async function openTrip(tripId) {
     state.currentTrip = { id: snap.id, ...snap.data() };
     state.rates = state.currentTrip.rates || {};
     renderTripDetail();
+  }, (err) => {
+    console.error('Trip load error:', err);
+    toast('旅程讀取失敗：' + err.message, 'error');
   }));
 
   state.unsubscribers.push(membersCol(tripId).orderBy('createdAt', 'asc').onSnapshot((snap) => {
     state.members = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderTripDetail();
+  }, (err) => {
+    console.error('Members load error:', err);
+    toast('成員讀取失敗：' + err.message, 'error');
   }));
 
   state.unsubscribers.push(
-    expensesCol(tripId).orderBy('date', 'desc').orderBy('createdAt', 'desc').onSnapshot((snap) => {
+    expensesCol(tripId).orderBy('date', 'desc').onSnapshot((snap) => {
       state.expenses = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // Secondary sort by createdAt within the same date (client-side, no composite index needed)
+      state.expenses.sort((a, b) => {
+        if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+        const ta = a.createdAt?.toMillis?.() || 0;
+        const tb = b.createdAt?.toMillis?.() || 0;
+        return tb - ta;
+      });
       updateTripStats();
       renderTripDetail();
+    }, (err) => {
+      console.error('Expenses load error:', err);
+      toast('支出讀取失敗：' + err.message, 'error');
     })
   );
 
@@ -1455,30 +1472,46 @@ function clearAiKey() {
 
 function compressImage(file, maxSize = 1280, quality = 0.85) {
   return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > height && width > maxSize) {
-        height = Math.round((height * maxSize) / width);
-        width = maxSize;
-      } else if (height > maxSize) {
-        width = Math.round((width * maxSize) / height);
-        height = maxSize;
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-      const dataUrl = canvas.toDataURL('image/jpeg', quality);
-      URL.revokeObjectURL(img.src);
-      resolve({
-        base64: dataUrl.split(',')[1],
-        mimeType: 'image/jpeg',
-      });
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let { width, height } = img;
+          // iOS Safari canvas size limit ~4096px
+          const limit = 4096;
+          if (width > limit || height > limit) {
+            const scale = Math.min(limit / width, limit / height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          if (width > height && width > maxSize) {
+            height = Math.round((height * maxSize) / width);
+            width = maxSize;
+          } else if (height > maxSize) {
+            width = Math.round((width * maxSize) / height);
+            height = maxSize;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { reject(new Error('Canvas 不可用')); return; }
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve({
+            base64: dataUrl.split(',')[1],
+            mimeType: 'image/jpeg',
+          });
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = () => reject(new Error('圖片載入失敗'));
+      img.src = reader.result;
     };
-    img.onerror = reject;
-    img.src = URL.createObjectURL(file);
+    reader.onerror = () => reject(new Error('檔案讀取失敗'));
+    reader.readAsDataURL(file);
   });
 }
 
@@ -1506,35 +1539,57 @@ async function callGeminiVision(base64, mimeType, apiKey) {
   - 數量沒寫的話 qty 用 1。
   - 若收據沒有逐項列出（例如計程車收據只有總額、或單一項目），items 回傳空陣列 []。`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-  const body = {
-    contents: [{
-      parts: [
-        { text: prompt },
-        { inline_data: { mime_type: mimeType, data: base64 } }
-      ]
-    }],
-    generationConfig: { response_mime_type: 'application/json', temperature: 0.1 },
-  };
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`API 錯誤 ${res.status}: ${errText.slice(0, 200)}`);
+  // Try models in order: latest first, then fallback
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  let lastErr = null;
+
+  for (const model of models) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const body = {
+      contents: [{
+        parts: [
+          { text: prompt },
+          { inline_data: { mime_type: mimeType, data: base64 } }
+        ]
+      }],
+      generationConfig: { temperature: 0.1 },
+    };
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        // Model not found → try next
+        if (res.status === 404 || res.status === 400) {
+          lastErr = new Error(`${model}: ${res.status}`);
+          continue;
+        }
+        throw new Error(`API 錯誤 ${res.status}: ${errText.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error('AI 沒有回傳結果');
+      // Parse JSON from response (may be wrapped in markdown code block)
+      const cleaned = text.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '').trim();
+      try {
+        return JSON.parse(cleaned);
+      } catch (e) {
+        const m = cleaned.match(/\{[\s\S]*\}/);
+        if (m) return JSON.parse(m[0]);
+        throw new Error('無法解析 AI 回應');
+      }
+    } catch (err) {
+      lastErr = err;
+      // Only retry on model-not-found errors
+      if (err.message && !err.message.includes('404') && !err.message.includes('400')) {
+        throw err;
+      }
+    }
   }
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('AI 沒有回傳結果');
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
-    throw new Error('無法解析 AI 回應');
-  }
+  throw lastErr || new Error('所有 AI 模型均不可用');
 }
 
 function applyReceiptData(d) {
@@ -1570,7 +1625,9 @@ async function handleReceiptFile(file) {
   $('ai-scanning').classList.remove('hidden');
   try {
     const { base64, mimeType } = await compressImage(file);
+    if (!base64) throw new Error('圖片壓縮失敗');
     const data = await callGeminiVision(base64, mimeType, key);
+    if (!data || typeof data !== 'object') throw new Error('AI 回傳格式錯誤');
     // 若辨識出 2+ 個品項 → 跳出拆分視窗讓使用者選
     if (Array.isArray(data.items) && data.items.length >= 2) {
       $('ai-scanning').classList.add('hidden');
@@ -1581,8 +1638,12 @@ async function handleReceiptFile(file) {
     applyReceiptData(data);
     toast('辨識完成，請確認資料 ✨', 'success');
   } catch (err) {
-    console.error(err);
-    toast('辨識失敗：' + (err.message || '請再試一次'), 'error');
+    console.error('Receipt scan error:', err);
+    let msg = err.message || '請再試一次';
+    if (msg.includes('403')) msg = 'API key 無效或未啟用 Gemini API，請重新確認';
+    else if (msg.includes('429')) msg = 'API 額度已滿，請稍後再試';
+    else if (msg.includes('PERMISSION_DENIED')) msg = 'API key 權限不足，請確認已啟用 Generative Language API';
+    toast('辨識失敗：' + msg, 'error');
   } finally {
     $('ai-scanning').classList.add('hidden');
     $('receipt-file').value = '';
