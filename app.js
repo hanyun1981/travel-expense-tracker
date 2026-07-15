@@ -133,6 +133,18 @@ function fmtNum(n, decimals = 2) {
   });
 }
 
+// 外幣換算成主要幣別。JPY→TWD 時無條件進位取整數
+function toBase(amount, currency, baseCurrency, rate) {
+  const raw = amount * rate;
+  if (currency === 'JPY' && baseCurrency === 'TWD') return Math.ceil(raw);
+  return Math.round(raw * 100) / 100;
+}
+
+// 用於分攤金額的換算（同上邏輯）
+function splitToBase(splitAmt, currency, baseCurrency, rate) {
+  return toBase(splitAmt, currency, baseCurrency, rate);
+}
+
 function colorFor(name) {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash << 5) - hash + name.charCodeAt(i);
@@ -1260,12 +1272,12 @@ async function handleExpenseSubmit(e) {
     return;
   }
 
-  const baseAmount = amount * rate;
+  const baseAmount = toBase(amount, currency, state.currentTrip.baseCurrency, rate);
   const splitsWithBase = splits.map((s) => ({
     memberId: s.memberId,
     value: s.value,
     amount: Math.round(s.amount * 100) / 100,
-    baseAmount: Math.round(s.amount * rate * 100) / 100,
+    baseAmount: splitToBase(s.amount, currency, state.currentTrip.baseCurrency, rate),
   }));
 
   const data = {
@@ -1384,10 +1396,12 @@ function updateRateDisplay() {
     display.innerHTML = `⚠️ 尚未設定 ${cur} 匯率，請點右上角選單 → 設定匯率`;
   } else {
     const amt = parseFloat($('exp-amount').value) || 0;
-    const baseAmt = amt * rate;
+    const baseCurrency = state.currentTrip.baseCurrency;
+    const baseAmt = toBase(amt, cur, baseCurrency, rate);
     display.classList.remove('hidden');
     display.className = 'rate-display';
-    display.innerHTML = `💱 1 ${cur} = ${fmtNum(rate, 6)} ${state.currentTrip.baseCurrency}${amt > 0 ? ` · 約 ${state.currentTrip.baseCurrency} ${fmtNum(baseAmt)}` : ''}`;
+    const rounding = (cur === 'JPY' && baseCurrency === 'TWD') ? '（無條件進位）' : '';
+    display.innerHTML = `💱 1 ${cur} = ${fmtNum(rate, 6)} ${baseCurrency}${amt > 0 ? ` · 約 ${baseCurrency} ${fmtNum(baseAmt, 0)}${rounding}` : ''}`;
   }
 }
 
@@ -1797,7 +1811,8 @@ function scanAddItem() {
 
 function computeScanExpenseData(item) {
   const currency = scanDraft.currency;
-  const rate = currency === state.currentTrip.baseCurrency ? 1 : (state.rates[currency] || 0);
+  const baseCurrency = state.currentTrip.baseCurrency;
+  const rate = currency === baseCurrency ? 1 : (state.rates[currency] || 0);
   if (rate <= 0) return null;
   const amount = Number(item.amount) || 0;
   const splitterIds = [...scanDraft.splitterIds];
@@ -1812,7 +1827,7 @@ function computeScanExpenseData(item) {
       memberId: mid,
       value: 1,
       amount: Math.round(amt * 100) / 100,
-      baseAmount: Math.round(amt * rate * 100) / 100,
+      baseAmount: splitToBase(amt, currency, baseCurrency, rate),
     };
   });
   return {
@@ -1820,7 +1835,7 @@ function computeScanExpenseData(item) {
     amount: Math.round(amount * 100) / 100,
     currency,
     rate,
-    baseAmount: Math.round(amount * rate * 100) / 100,
+    baseAmount: toBase(amount, currency, baseCurrency, rate),
     date: scanDraft.date,
     note: scanDraft.note || '',
     category: document.querySelector('#scan-category-grid .cat-btn.active')?.dataset.cat || scanDraft.category,
