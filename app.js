@@ -339,6 +339,8 @@ async function bootstrap() {
   populateCurrencySelect($('exp-currency'));
   // Migrate old data once (silent if nothing to do)
   await migrateOldData();
+  // Migrate JPY→TWD rounding to ceiling (one-time)
+  await migrateJpyCeiling();
   await loadTrips();
   // Auto-join if URL has ?trip=ID
   await handleJoinFromUrl();
@@ -396,6 +398,85 @@ async function migrateOldData() {
   } catch (err) {
     console.error('Migration error:', err);
     // Silent failure — user might just be new
+  }
+}
+
+// ===== Migration: JPY→TWD 歷史資料改為無條件進位整數 =====
+async function migrateJpyCeiling() {
+  const STORAGE_KEY = 'jpy_ceiling_migrated_' + state.user.uid;
+  if (localStorage.getItem(STORAGE_KEY)) return; // 已跑過
+
+  try {
+    // 取得使用者參與的所有旅程
+    const tripSnap = await tripsCol()
+      .where('memberUids', 'array-contains', state.user.uid)
+      .get();
+    if (tripSnap.empty) { localStorage.setItem(STORAGE_KEY, '1'); return; }
+
+    let totalUpdated = 0;
+
+    for (const tripDoc_ of tripSnap.docs) {
+      const tripData = tripDoc_.data();
+      const baseCurrency = tripData.baseCurrency;
+      if (baseCurrency !== 'TWD') continue; // 只處理主幣為 TWD 的旅程
+
+      // 取得該旅程所有 JPY 支出
+      const expSnap = await expensesCol(tripDoc_.id).get();
+      const batch = db.batch();
+      let batchCount = 0;
+
+      for (const expDoc of expSnap.docs) {
+        const exp = expDoc.data();
+        if (exp.currency !== 'JPY') continue;
+        if (!exp.rate || exp.rate <= 0) continue;
+
+        const rate = exp.rate;
+        const amount = exp.amount || 0;
+        const newBaseAmount = Math.ceil(amount * rate);
+
+        // 檢查是否需要更新（已經是整數且一致就跳過）
+        if (newBaseAmount === exp.baseAmount) {
+          // 也檢查每筆 split
+          const splits = exp.splits || [];
+          const splitsOk = splits.every((s) => {
+            const expected = Math.ceil((s.amount || 0) * rate);
+            return expected === s.baseAmount;
+          });
+          if (splitsOk) continue;
+        }
+
+        // 重新計算所有 split 的 baseAmount
+        const newSplits = (exp.splits || []).map((s) => ({
+          ...s,
+          baseAmount: Math.ceil((s.amount || 0) * rate),
+        }));
+
+        batch.update(expDoc.ref, {
+          baseAmount: newBaseAmount,
+          splits: newSplits,
+        });
+        batchCount++;
+
+        // Firestore batch 上限 500 筆，分批提交
+        if (batchCount >= 450) {
+          await batch.commit();
+          batchCount = 0;
+        }
+      }
+
+      if (batchCount > 0) {
+        await batch.commit();
+      }
+      totalUpdated += batchCount;
+    }
+
+    localStorage.setItem(STORAGE_KEY, '1');
+    if (totalUpdated > 0) {
+      toast(`已將 ${totalUpdated} 筆 JPY 支出改為無條件進位 ✓`, 'success');
+    }
+  } catch (err) {
+    console.error('JPY ceiling migration error:', err);
+    // 不阻擋啟動，下次再試
   }
 }
 
