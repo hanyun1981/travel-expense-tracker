@@ -145,6 +145,13 @@ function splitToBase(splitAmt, currency, baseCurrency, rate) {
   return toBase(splitAmt, currency, baseCurrency, rate);
 }
 
+// 顯示主幣金額：TWD 不顯示小數，其他幣別保留2位
+function baseFmt(amount) {
+  const cur = state.currentTrip?.baseCurrency;
+  if (cur === 'TWD' || cur === 'JPY') return fmtNum(Math.ceil(amount), 0);
+  return fmtNum(amount);
+}
+
 function colorFor(name) {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash << 5) - hash + name.charCodeAt(i);
@@ -708,7 +715,7 @@ function renderTripDetail() {
   $('trip-meta').textContent = `${state.members.length} 位旅伴 · 主要幣別 ${state.currentTrip.baseCurrency}`;
 
   const total = state.expenses.reduce((s, e) => s + (e.baseAmount || 0), 0);
-  $('total-expense').textContent = `${state.currentTrip.baseCurrency} ${fmtNum(total)}`;
+  $('total-expense').textContent = `${state.currentTrip.baseCurrency} ${baseFmt(total)}`;
   $('expense-count').textContent = state.expenses.length;
 
   renderExpensesList();
@@ -760,7 +767,7 @@ function renderExpensesList() {
         <div class="expense-meta">${escapeHtml(payerName)} 付款 · ${splitCount} 人分攤</div>
       </div>
       <div class="expense-amount">
-        ${state.currentTrip.baseCurrency} ${fmtNum(exp.baseAmount || 0)}
+        ${state.currentTrip.baseCurrency} ${baseFmt(exp.baseAmount || 0)}
         ${exp.currency !== state.currentTrip.baseCurrency
           ? `<span class="expense-amount-foreign">${exp.currency} ${fmtNum(exp.amount)}</span>`
           : ''}
@@ -796,7 +803,7 @@ function renderMembersList() {
       ${avatarMarkup(m, 40)}
       <div style="flex:1">
         <div class="member-name">${escapeHtml(m.name)}</div>
-        <div class="member-stats">已付 ${fmtNum(paidTotal)} · 應分 ${fmtNum(owedTotal)}</div>
+        <div class="member-stats">已付 ${baseFmt(paidTotal)} · 應分 ${baseFmt(owedTotal)}</div>
       </div>
     `;
     container.appendChild(item);
@@ -817,7 +824,15 @@ function calculateSettlements() {
     });
   });
 
-  Object.keys(balances).forEach((k) => { balances[k] = Math.round(balances[k] * 100) / 100; });
+  Object.keys(balances).forEach((k) => {
+    const baseCurrency = state.currentTrip?.baseCurrency;
+    if (baseCurrency === 'TWD' || baseCurrency === 'JPY') {
+      // 無條件進位取整數（欠的人多付一點，避免少付）
+      balances[k] = balances[k] >= 0 ? Math.ceil(balances[k]) : -Math.ceil(Math.abs(balances[k]));
+    } else {
+      balances[k] = Math.round(balances[k] * 100) / 100;
+    }
+  });
 
   const balanceList = state.members.map((m) => ({
     id: m.id,
@@ -834,10 +849,13 @@ function calculateSettlements() {
   let i = 0, j = 0;
   while (i < debtors.length && j < creditors.length) {
     const amt = Math.min(debtors[i].balance, creditors[j].balance);
+    const baseCurrency = state.currentTrip?.baseCurrency;
+    const settleAmt = (baseCurrency === 'TWD' || baseCurrency === 'JPY')
+      ? Math.ceil(amt) : Math.round(amt * 100) / 100;
     settlements.push({
       from: debtors[i].name, fromId: debtors[i].id,
       to: creditors[j].name, toId: creditors[j].id,
-      amount: Math.round(amt * 100) / 100,
+      amount: settleAmt,
     });
     debtors[i].balance -= amt;
     creditors[j].balance -= amt;
@@ -855,7 +873,7 @@ function renderSettlement() {
 
   $('settle-summary').innerHTML = `
     <h3>本次旅程總支出</h3>
-    <div class="big">${baseCurrency} ${fmtNum(total)}</div>
+    <div class="big">${baseCurrency} ${baseFmt(total)}</div>
   `;
 
   const balContainer = $('balance-list');
@@ -874,7 +892,7 @@ function renderSettlement() {
         ${avatarMarkup(m, 34)}
         ${escapeHtml(b.name)}
       </div>
-      <div class="balance-amount ${cls}">${prefix}${baseCurrency} ${fmtNum(Math.abs(b.balance))}</div>
+      <div class="balance-amount ${cls}">${prefix}${baseCurrency} ${baseFmt(Math.abs(b.balance))}</div>
     `;
     balContainer.appendChild(item);
   });
@@ -895,7 +913,7 @@ function renderSettlement() {
       <div class="settlement-arrow">→</div>
       <div class="settlement-to">
         ${escapeHtml(s.to)}
-        <span class="settlement-amount">${baseCurrency} ${fmtNum(s.amount)}</span>
+        <span class="settlement-amount">${baseCurrency} ${baseFmt(s.amount)}</span>
       </div>
       ${avatarMarkup(mTo, 36)}
     `;
