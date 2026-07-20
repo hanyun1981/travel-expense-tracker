@@ -772,7 +772,6 @@ function renderTripDetail() {
   renderExpensesList();
   renderMembersList();
   renderSettlement();
-  renderPersonalCard();
   updateActionAvailability();
 }
 
@@ -923,26 +922,12 @@ function renderSettlement() {
   const total = state.expenses.reduce((s, e) => s + (e.baseAmount || 0), 0);
   const baseCurrency = state.currentTrip.baseCurrency;
 
-  // 個人花費（結算頁面也顯示）
-  const myId = getMyMemberId();
-  let personalHtml = '';
-  if (myId) {
-    const myMember = state.members.find(m => m.id === myId);
-    if (myMember) {
-      let myTotal = 0;
-      state.expenses.forEach(exp => {
-        const mySplit = (exp.splits || []).find(s => s.memberId === myId);
-        if (mySplit) myTotal += (mySplit.baseAmount || 0);
-      });
-      personalHtml = `<div class="personal-settle">🙋 ${escapeHtml(myMember.name)} 的花費：<strong>${baseCurrency} ${baseFmt(myTotal)}</strong></div>`;
-    }
-  }
-
   $('settle-summary').innerHTML = `
     <h3>本次旅程總支出</h3>
     <div class="big">${baseCurrency} ${baseFmt(total)}</div>
-    ${personalHtml}
   `;
+
+  renderPersonalCard();
 
   const balContainer = $('balance-list');
   balContainer.innerHTML = '';
