@@ -472,6 +472,56 @@ input:focus, select:focus, textarea:focus { outline: none; }
   display: block;
 }
 
+/* ===== Personal expense card ===== */
+.personal-card {
+  background: linear-gradient(135deg, var(--ocean-light), #f0fdfa);
+  border: 1px solid #99f6e4;
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.personal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.personal-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ocean-dark);
+}
+.personal-select {
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid #99f6e4;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  outline: none;
+  max-width: 140px;
+}
+.personal-select:focus { border-color: var(--ocean); }
+.personal-amount {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--ocean-dark);
+  letter-spacing: -0.02em;
+}
+.personal-settle {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--ocean-dark);
+  background: var(--ocean-light);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+}
+.personal-settle strong {
+  font-weight: 800;
+  font-size: 16px;
+}
+
 /* ===== Expenses list ===== */
 .expenses-list {
   display: flex;

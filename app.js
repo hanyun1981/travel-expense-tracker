@@ -152,6 +152,57 @@ function baseFmt(amount) {
   return fmtNum(amount);
 }
 
+// ===== 個人花費追蹤 =====
+function getMyMemberId() {
+  if (!state.currentTripId) return null;
+  return localStorage.getItem('my_member_' + state.currentTripId) || null;
+}
+function setMyMemberId(memberId) {
+  if (!state.currentTripId) return;
+  if (memberId) localStorage.setItem('my_member_' + state.currentTripId, memberId);
+  else localStorage.removeItem('my_member_' + state.currentTripId);
+}
+
+function renderPersonalCard() {
+  const card = $('personal-card');
+  const sel = $('personal-member-select');
+  const amtEl = $('personal-amount');
+  if (!card || !state.currentTrip) return;
+
+  // 至少要有成員才顯示
+  if (state.members.length === 0) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  // 更新下拉選單（保持選擇不變）
+  const savedId = getMyMemberId();
+  const prevValue = sel.value;
+  sel.innerHTML = '<option value="">選擇我是誰</option>' +
+    state.members.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
+
+  // 恢復選擇
+  if (savedId && state.members.some(m => m.id === savedId)) {
+    sel.value = savedId;
+  } else if (prevValue) {
+    sel.value = prevValue;
+  }
+
+  // 計算個人花費（只算自己分攤到的部分）
+  const myId = sel.value;
+  if (!myId) {
+    amtEl.textContent = '--';
+    return;
+  }
+
+  const baseCurrency = state.currentTrip.baseCurrency;
+  let myTotal = 0;
+  state.expenses.forEach(exp => {
+    const mySplit = (exp.splits || []).find(s => s.memberId === myId);
+    if (mySplit) myTotal += (mySplit.baseAmount || 0);
+  });
+
+  amtEl.textContent = `${baseCurrency} ${baseFmt(myTotal)}`;
+}
+
 function colorFor(name) {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash << 5) - hash + name.charCodeAt(i);
@@ -721,6 +772,7 @@ function renderTripDetail() {
   renderExpensesList();
   renderMembersList();
   renderSettlement();
+  renderPersonalCard();
   updateActionAvailability();
 }
 
@@ -871,9 +923,25 @@ function renderSettlement() {
   const total = state.expenses.reduce((s, e) => s + (e.baseAmount || 0), 0);
   const baseCurrency = state.currentTrip.baseCurrency;
 
+  // 個人花費（結算頁面也顯示）
+  const myId = getMyMemberId();
+  let personalHtml = '';
+  if (myId) {
+    const myMember = state.members.find(m => m.id === myId);
+    if (myMember) {
+      let myTotal = 0;
+      state.expenses.forEach(exp => {
+        const mySplit = (exp.splits || []).find(s => s.memberId === myId);
+        if (mySplit) myTotal += (mySplit.baseAmount || 0);
+      });
+      personalHtml = `<div class="personal-settle">🙋 ${escapeHtml(myMember.name)} 的花費：<strong>${baseCurrency} ${baseFmt(myTotal)}</strong></div>`;
+    }
+  }
+
   $('settle-summary').innerHTML = `
     <h3>本次旅程總支出</h3>
     <div class="big">${baseCurrency} ${baseFmt(total)}</div>
+    ${personalHtml}
   `;
 
   const balContainer = $('balance-list');
@@ -2272,6 +2340,11 @@ function bindEvents() {
 
   $('exp-amount').addEventListener('input', () => { updateRateDisplay(); updateSplitSummary(); });
   $('exp-currency').addEventListener('change', () => { updateRateDisplay(); renderSplitList(); });
+
+  $('personal-member-select').addEventListener('change', (e) => {
+    setMyMemberId(e.target.value);
+    renderPersonalCard();
+  });
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeAllModals();
