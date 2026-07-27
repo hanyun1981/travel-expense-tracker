@@ -103,6 +103,8 @@ const state = {
   splitMode: 'equal',
   editingExpenseId: null,
   editingMemberId: null,
+  companions: [],
+  companionUnsub: null,
 };
 
 // ===== DOM helpers =====
@@ -390,6 +392,9 @@ function expensesCol(tripId) { return tripDoc(tripId).collection('expenses'); }
 function expenseDoc(tripId, eid) { return expensesCol(tripId).doc(eid); }
 // Old per-user paths (only used for one-time migration)
 function oldTripsCol() { return db.collection('users').doc(state.user.uid).collection('trips'); }
+// Companion list (global, per user)
+function companionsCol() { return db.collection('users').doc(state.user.uid).collection('companions'); }
+function companionDoc(id) { return companionsCol().doc(id); }
 
 // ===== Bootstrap =====
 async function bootstrap() {
@@ -399,6 +404,7 @@ async function bootstrap() {
   await migrateOldData();
   // Migrate JPY→TWD rounding to ceiling (one-time)
   await migrateJpyCeiling();
+  loadCompanions();
   await loadTrips();
   // Auto-join if URL has ?trip=ID
   await handleJoinFromUrl();
@@ -1037,6 +1043,7 @@ function openTripModal(trip = null) {
   $('trip-members-input').value = '';
   $('trip-members-group').style.display = trip ? 'none' : '';
   $('trip-form').dataset.editId = trip?.id || '';
+  if (!trip) renderCompanionPicker();
   openModal('trip-modal');
   setTimeout(() => $('trip-name-input').focus(), 100);
 }
@@ -1067,8 +1074,21 @@ async function handleTripSubmit(e) {
         memberCount: 0,
       });
       const lines = $('trip-members-input').value.split('\n').map((l) => l.trim()).filter(Boolean);
-      if (lines.length > 0) {
+      // Collect selected companions from picker
+      const selectedCompanions = [];
+      document.querySelectorAll('#companion-picker .companion-chip.checked').forEach(chip => {
+        const cid = chip.dataset.companionId;
+        const c = state.companions.find(x => x.id === cid);
+        if (c) selectedCompanions.push(c);
+      });
+      if (lines.length > 0 || selectedCompanions.length > 0) {
         const batch = db.batch();
+        selectedCompanions.forEach((c) => {
+          const mref = membersCol(docRef.id).doc();
+          const data = { name: c.name, createdAt: FieldValue.serverTimestamp() };
+          if (c.avatarUrl) data.avatarUrl = c.avatarUrl;
+          batch.set(mref, data);
+        });
         lines.forEach((nm) => {
           const mref = membersCol(docRef.id).doc();
           batch.set(mref, { name: nm, createdAt: FieldValue.serverTimestamp() });
@@ -2052,12 +2072,212 @@ async function handleScanCreate(mergeAll = false) {
   }
 }
 
+// ===== Companion list (global, reusable across trips) =====
+function loadCompanions() {
+  if (state.companionUnsub) state.companionUnsub();
+  state.companionUnsub = companionsCol().orderBy('createdAt', 'asc').onSnapshot((snap) => {
+    state.companions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }, (err) => { console.error('Companions load error:', err); });
+}
+
+let companionAvatarDraft = null;
+
+function openCompanionModal() {
+  companionAvatarDraft = null;
+  renderCompanionAvatarPreview(null);
+  $('companion-add-name').value = '';
+  renderCompanionList();
+  openModal('companion-modal');
+}
+
+function renderCompanionAvatarPreview(url) {
+  const el = $('companion-add-avatar');
+  if (url) el.innerHTML = `<img src="${escapeHtml(url)}" alt="" />`;
+  else el.innerHTML = '<span>+</span>';
+}
+
+function renderCompanionList() {
+  const list = $('companion-list');
+  list.innerHTML = '';
+  if (state.companions.length === 0) {
+    list.innerHTML = '<div style="text-align:center;color:var(--text-light);padding:24px;font-size:13px;">還沒有旅伴，在下方新增第一位</div>';
+    return;
+  }
+  state.companions.forEach(c => {
+    const row = create('div', { className: 'companion-row' });
+    row.innerHTML = `
+      ${avatarMarkup(c, 38)}
+      <div class="companion-row-name">${escapeHtml(c.name)}</div>
+      <div class="companion-row-actions">
+        <button class="companion-row-btn edit-btn" title="編輯">✏️</button>
+        <button class="companion-row-btn danger del-btn" title="刪除">🗑️</button>
+      </div>
+    `;
+    row.querySelector('.edit-btn').addEventListener('click', () => editCompanion(c));
+    row.querySelector('.del-btn').addEventListener('click', () => deleteCompanion(c));
+    list.appendChild(row);
+  });
+}
+
+async function addCompanion() {
+  const name = $('companion-add-name').value.trim();
+  if (!name) { toast('請輸入名稱', 'error'); return; }
+  try {
+    const data = { name, createdAt: FieldValue.serverTimestamp() };
+    if (companionAvatarDraft) data.avatarUrl = companionAvatarDraft;
+    await companionsCol().add(data);
+    $('companion-add-name').value = '';
+    companionAvatarDraft = null;
+    renderCompanionAvatarPreview(null);
+    toast('已新增 ✓');
+    renderCompanionList();
+  } catch (err) {
+    toast('新增失敗：' + err.message, 'error');
+  }
+}
+
+async function editCompanion(c) {
+  const newName = prompt('修改名稱', c.name);
+  if (newName === null || !newName.trim()) return;
+  try {
+    await companionDoc(c.id).update({ name: newName.trim() });
+    toast('已更新');
+    renderCompanionList();
+  } catch (err) { toast('更新失敗：' + err.message, 'error'); }
+}
+
+async function deleteCompanion(c) {
+  if (!confirm(`確定要刪除「${c.name}」？`)) return;
+  try {
+    await companionDoc(c.id).delete();
+    toast('已刪除');
+    renderCompanionList();
+  } catch (err) { toast('刪除失敗：' + err.message, 'error'); }
+}
+
+async function handleCompanionAvatarFile(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    companionAvatarDraft = await compressAvatarFile(file);
+    renderCompanionAvatarPreview(companionAvatarDraft);
+    e.target.value = '';
+  } catch (err) { toast('處理圖片失敗', 'error'); }
+}
+
+// Render companion picker in trip creation modal
+function renderCompanionPicker() {
+  const picker = $('companion-picker');
+  picker.innerHTML = '';
+  if (state.companions.length === 0) {
+    picker.innerHTML = '<div style="font-size:12px;color:var(--text-light);padding:4px 0;">還沒有旅伴清單，可在下方直接輸入名字</div>';
+    return;
+  }
+  state.companions.forEach(c => {
+    const chip = create('div', { className: 'companion-chip' });
+    chip.innerHTML = `${avatarMarkup(c, 28)}<span>${escapeHtml(c.name)}</span>`;
+    chip.dataset.companionId = c.id;
+    chip.addEventListener('click', () => chip.classList.toggle('checked'));
+    picker.appendChild(chip);
+  });
+}
+
+// Import companions into current trip
+function openImportCompanionModal() {
+  if (state.companions.length === 0) {
+    toast('還沒有旅伴清單，請先建立', 'error');
+    openCompanionModal();
+    return;
+  }
+  const list = $('import-companion-list');
+  list.innerHTML = '';
+  const existingNames = new Set(state.members.map(m => m.name.toLowerCase()));
+  state.companions.forEach(c => {
+    const exists = existingNames.has(c.name.toLowerCase());
+    const row = create('div', { className: 'companion-check-row' + (exists ? ' disabled' : '') });
+    row.dataset.companionId = c.id;
+    row.innerHTML = `
+      <div class="companion-checkbox">${exists ? '✓' : ''}</div>
+      ${avatarMarkup(c, 34)}
+      <div class="companion-check-info">
+        <div class="companion-check-name">${escapeHtml(c.name)}</div>
+        ${exists ? '<div class="companion-check-hint">已在旅程中</div>' : ''}
+      </div>
+    `;
+    if (!exists) {
+      row.addEventListener('click', () => {
+        row.classList.toggle('checked');
+        const cb = row.querySelector('.companion-checkbox');
+        cb.innerHTML = row.classList.contains('checked') ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : '';
+      });
+    }
+    list.appendChild(row);
+  });
+  openModal('import-companion-modal');
+}
+
+async function handleImportCompanions() {
+  const checked = document.querySelectorAll('#import-companion-list .companion-check-row.checked');
+  if (checked.length === 0) { toast('請勾選至少一位旅伴'); return; }
+  try {
+    const batch = db.batch();
+    checked.forEach(row => {
+      const cid = row.dataset.companionId;
+      const c = state.companions.find(x => x.id === cid);
+      if (!c) return;
+      const ref = membersCol(state.currentTripId).doc();
+      const data = { name: c.name, createdAt: FieldValue.serverTimestamp() };
+      if (c.avatarUrl) data.avatarUrl = c.avatarUrl;
+      batch.set(ref, data);
+    });
+    await batch.commit();
+    closeModal('import-companion-modal');
+    toast(`已匯入 ${checked.length} 位旅伴 ✓`, 'success');
+  } catch (err) { toast('匯入失敗：' + err.message, 'error'); }
+}
+
 // ===== Cover photo picker =====
 let coverDraft = null;
+
+function compressCoverImage(file, maxW = 800, maxH = 450, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let { naturalWidth: w, naturalHeight: h } = img;
+          const limit = 4096;
+          if (w > limit || h > limit) { const s = Math.min(limit/w, limit/h); w = Math.round(w*s); h = Math.round(h*s); }
+          if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+          if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } catch (err) { reject(err); }
+      };
+      img.onerror = () => reject(new Error('圖片載入失敗'));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error('檔案讀取失敗'));
+    reader.readAsDataURL(file);
+  });
+}
 
 function openCoverModal() {
   if (!state.currentTrip) return;
   coverDraft = state.currentTrip.coverImageUrl || null;
+  // Reset upload preview
+  $('cover-upload-preview').classList.add('hidden');
+  $('cover-file-input').value = '';
+  if (coverDraft && coverDraft.startsWith('data:')) {
+    $('cover-preview-img').src = coverDraft;
+    $('cover-upload-preview').classList.remove('hidden');
+  }
   const grid = $('cover-grid');
   grid.innerHTML = '';
   COVER_PRESETS.forEach((p) => {
@@ -2230,6 +2450,33 @@ function bindEvents() {
   });
 
   $('add-member-btn').addEventListener('click', () => openMemberModal());
+  $('import-companion-btn').addEventListener('click', () => openImportCompanionModal());
+  $('import-companion-confirm').addEventListener('click', handleImportCompanions);
+
+  // Companion management
+  $('action-manage-companions').addEventListener('click', () => { closeAllModals(); openCompanionModal(); });
+  $('manage-companions-btn').addEventListener('click', () => openCompanionModal());
+  $('companion-add-btn').addEventListener('click', addCompanion);
+  $('companion-add-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addCompanion(); } });
+  $('companion-add-avatar').addEventListener('click', () => $('companion-avatar-file').click());
+  $('companion-avatar-file').addEventListener('change', handleCompanionAvatarFile);
+
+  // Cover photo upload
+  $('cover-upload-btn').addEventListener('click', () => $('cover-file-input').click());
+  $('cover-file-input').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressCoverImage(file);
+      coverDraft = dataUrl;
+      $('cover-preview-img').src = dataUrl;
+      $('cover-upload-preview').classList.remove('hidden');
+      $('cover-url-input').value = '';
+      document.querySelectorAll('.cover-item').forEach(x => x.classList.remove('active'));
+      toast('照片已載入，按「儲存」確認', 'success');
+    } catch (err) { toast('處理圖片失敗：' + err.message, 'error'); }
+    e.target.value = '';
+  });
 
   $('trip-form').addEventListener('submit', handleTripSubmit);
   $('expense-form').addEventListener('submit', handleExpenseSubmit);

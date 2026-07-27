@@ -132,10 +132,15 @@
 
         <div id="tab-members" class="tab-content hidden">
           <div id="members-list" class="members-list"></div>
-          <button id="add-member-btn" class="btn btn-primary full-width btn-large">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-            新增旅伴
-          </button>
+          <div class="member-btn-group">
+            <button id="add-member-btn" class="btn btn-primary flex-1 btn-large">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+              新增旅伴
+            </button>
+            <button id="import-companion-btn" class="btn btn-ocean flex-1 btn-large">
+              📋 從清單匯入
+            </button>
+          </div>
           <div id="members-empty" class="empty-state hidden">
             <div class="empty-icon">👥</div>
             <h3>還沒有成員</h3>
@@ -170,8 +175,15 @@
             <p class="form-hint">所有外幣支出會換算成此幣別來計算結算</p>
           </div>
           <div class="form-group" id="trip-members-group">
-            <label>初始旅伴（每行一位，可稍後再加）</label>
-            <textarea id="trip-members-input" rows="4" placeholder="小美&#10;阿明&#10;Tony"></textarea>
+            <label>選擇旅伴</label>
+            <div id="companion-picker" class="companion-picker"></div>
+            <div class="companion-picker-actions">
+              <button type="button" id="manage-companions-btn" class="btn btn-text btn-sm">⚙️ 管理旅伴清單</button>
+            </div>
+            <div class="form-group" style="margin-top:8px">
+              <label>或直接輸入新名字（每行一位）</label>
+              <textarea id="trip-members-input" rows="2" placeholder="小美&#10;阿明"></textarea>
+            </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-text close-modal">取消</button>
@@ -348,13 +360,20 @@
     <div id="cover-modal" class="modal hidden">
       <div class="modal-content modal-large">
         <div class="modal-header">
-          <h3>🖼️ 選擇封面照片</h3>
+          <h3>🖼️ 設定封面照片</h3>
           <button class="icon-btn close-modal" aria-label="關閉">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
         </div>
         <div class="modal-body">
-          <p class="form-hint">挑一張符合旅程主題的封面照，會出現在首頁卡片與旅程詳情頁。</p>
+          <button type="button" id="cover-upload-btn" class="cover-upload-btn">
+            <span>📷</span> 上傳自己的照片
+          </button>
+          <input type="file" id="cover-file-input" accept="image/*" class="hidden" />
+          <div id="cover-upload-preview" class="cover-upload-preview hidden">
+            <img id="cover-preview-img" alt="預覽" />
+          </div>
+          <p class="form-hint" style="margin:12px 0 8px">或從預設主題選一張</p>
           <div class="cover-grid" id="cover-grid"></div>
           <div class="form-group" style="margin-top:18px">
             <label>或貼上自己的圖片網址</label>
@@ -495,8 +514,56 @@
           ☁️ 資料儲存於此 Google 帳號<br/>
           <small>在其他裝置登入相同帳號即可同步</small>
         </div>
+        <button id="action-manage-companions" class="action-item">👥 管理旅伴清單</button>
         <button id="action-logout" class="action-item danger">登出</button>
         <button class="action-item cancel close-modal">取消</button>
+      </div>
+    </div>
+
+    <!-- Modal: Companion management -->
+    <div id="companion-modal" class="modal hidden">
+      <div class="modal-content modal-large">
+        <div class="modal-header">
+          <h3>👥 旅伴清單</h3>
+          <button class="icon-btn close-modal" aria-label="關閉">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="form-hint">建立一次，之後新增旅程或匯入旅伴時可直接勾選。</p>
+          <div id="companion-list" class="companion-list"></div>
+          <div class="companion-add-row">
+            <div class="companion-add-avatar" id="companion-add-avatar">
+              <span>+</span>
+            </div>
+            <input type="file" id="companion-avatar-file" accept="image/*" class="hidden" />
+            <input type="text" id="companion-add-name" placeholder="輸入旅伴名稱" class="companion-add-input" />
+            <button type="button" id="companion-add-btn" class="btn btn-primary btn-sm">新增</button>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-text close-modal">完成</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Import companions into current trip -->
+    <div id="import-companion-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>📋 從清單匯入旅伴</h3>
+          <button class="icon-btn close-modal" aria-label="關閉">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="form-hint">勾選要加入這趟旅程的旅伴（已在旅程中的會標示）</p>
+          <div id="import-companion-list" class="companion-list"></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-text close-modal">取消</button>
+            <button type="button" id="import-companion-confirm" class="btn btn-primary">匯入勾選的旅伴</button>
+          </div>
+        </div>
       </div>
     </div>
 
