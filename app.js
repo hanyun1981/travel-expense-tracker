@@ -41,7 +41,7 @@ const CATEGORY_ICONS = {
   lodging: '🏨', ticket: '🎫', shopping: '🛍️'
 };
 
-const TRIP_EMOJIS = ['🏝️', '🗼', '🗽', '🏯', '🏔️', '🌋', '🌴', '🚆', '⛩️', '🎡', '🏖️', '🌅'];
+const TRIP_EMOJIS = ['🏝️', '🗼', '🗽', '🏯', '🏔️', '🌋', '🌴', '🚆', '🎡', '🏖️', '🌅'];
 
 // 精選封面照片（Unsplash 公開 CDN，可自由嵌入）
 const COVER_PRESETS = [
@@ -650,7 +650,7 @@ function renderTripsList() {
     card.innerHTML = `
       <div class="trip-card-banner ${cover ? 'has-cover' : ''}">
         ${cover ? `<img class="trip-card-banner-img" src="${escapeHtml(cover)}" alt="" loading="lazy" />` : ''}
-        <div class="trip-card-emoji">${emoji}</div>
+        ${cover ? '' : `<div class="trip-card-emoji">${emoji}</div>`}
       </div>
       <div class="trip-card-body">
         <div class="trip-card-name">${escapeHtml(trip.name)}</div>
@@ -751,8 +751,10 @@ function renderTripDetail() {
   // Cover photo support
   const cover = state.currentTrip.coverImageUrl || autoCoverFor(state.currentTrip.name);
   const existingImg = hero.querySelector('.trip-detail-hero-img');
+  const emojiEl = $('trip-detail-emoji');
   if (cover) {
     hero.classList.add('has-cover');
+    emojiEl.style.display = 'none';
     if (existingImg) existingImg.src = cover;
     else {
       const img = document.createElement('img');
@@ -764,6 +766,7 @@ function renderTripDetail() {
     }
   } else {
     hero.classList.remove('has-cover');
+    emojiEl.style.display = '';
     if (existingImg) existingImg.remove();
   }
 
